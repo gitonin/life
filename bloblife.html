@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>BLOBLIFE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+  }
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000000;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ----- Écran de démarrage ----- */
+  #startScreen {
+    position: absolute;
+    inset: 0;
+    background: #000000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    transition: opacity 800ms ease;
+    opacity: 1;
+  }
+  #startScreen.fading {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #startCanvas {
+    display: block;
+  }
+  #startText {
+    font-family: "DM Serif Display", Georgia, serif;
+    font-style: italic;
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+    margin-top: 36px;
+    letter-spacing: 0.5px;
+    opacity: 0;
+    transition: opacity 1500ms ease;
+    padding: 0 24px;
+  }
+  #startText.visible {
+    opacity: 1;
+  }
+
+  /* ----- Canvas de jeu ----- */
+  #gameCanvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    background: var(--bg);
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 600ms ease;
+  }
+  #gameCanvas.visible {
+    opacity: 1;
+  }
+
+  /* ----- Indice de main (première fois) ----- */
+  #handHint {
+    position: absolute;
+    z-index: 15;
+    pointer-events: none;
+    color: rgba(255,255,255,0.5);
+    font-family: "DM Serif Display", Georgia, serif;
+    font-style: italic;
+    font-size: 15px;
+    left: 50%;
+    bottom: 48px;
+    transform: translateX(-50%);
+    text-align: center;
+    opacity: 0;
+    transition: opacity 1200ms ease;
+    width: 80%;
+    line-height: 1.6;
+  }
+  #handHint.visible { opacity: 1; }
+  #handHint .glyph {
+    display: block;
+    font-style: normal;
+    font-size: 26px;
+    margin-bottom: 10px;
+    animation: handFloat 2.4s ease-in-out infinite;
+  }
+  @keyframes handFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gameCanvas"></canvas>
+  <div id="handHint">
+    <span class="glyph">✦</span>
+    Caresse · tape · double-tape · maintiens
+  </div>
+  <div id="startScreen">
+    <canvas id="startCanvas" width="200" height="200"></canvas>
+    <div id="startText">Touche pour créer la vie</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function () {
+
+/* =====================================================================
+ *  UTILITAIRES
+ * ===================================================================== */
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const dist2 = (ax, ay, bx, by) => {
+  const dx = ax - bx, dy = ay - by;
+  return dx * dx + dy * dy;
+};
+let _id = 0;
+const nextId = () => ++_id;
+
+/* =====================================================================
+ *  MODULE : ColorMixer — mélange pigmentaire via RGB linéaire
+ * ===================================================================== */
+const ColorMixer = {
+  // HSL (h:0-360, s/l:0-100) -> sRGB 0-255
+  hslToRgb(h, s, l) {
+    h /= 360; s /= 100; l /= 100;
+    let r, g, b;
+    if (s === 0) {
+      r = g = b = l;
+    } else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1 / 3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1 / 3);
+    }
+    return { r: r * 255, g: g * 255, b: b * 255 };
+  },
+
+  rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+    if (max === min) {
+      h = s = 0;
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        default: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    return { h: h * 360, s: s * 100, l: l * 100 };
+  },
+
+  // gamma sRGB <-> linéaire
+  toLinear(c) {
+    c /= 255;
+    return (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)) * 255;
+  },
+  toSrgb(c) {
+    c /= 255;
+    return (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255;
+  },
+
+  // Mélange pigmentaire : moyenne pondérée en espace linéaire
+  // amount = part de couleur "b" injectée dans "a"
+  mixHsl(a, b, amount) {
+    const ra = this.hslToRgb(a.h, a.s, a.l);
+    const rb = this.hslToRgb(b.h, b.s, b.l);
+    const la = { r: this.toLinear(ra.r), g: this.toLinear(ra.g), b: this.toLinear(ra.b) };
+    const lb = { r: this.toLinear(rb.r), g: this.toLinear(rb.g), b: this.toLinear(rb.b) };
+    const mr = lerp(la.r, lb.r, amount);
+    const mg = lerp(la.g, lb.g, amount);
+    const mb = lerp(la.b, lb.b, amount);
+    const sr = this.toSrgb(mr), sg = this.toSrgb(mg), sb = this.toSrgb(mb);
+    return this.rgbToHsl(sr, sg, sb);
+  },
+
+  // Distance perceptuelle approximative entre deux HSL
+  distance(a, b) {
+    let dh = Math.abs(a.h - b.h);
+    if (dh > 180) dh = 360 - dh;
+    // pondère la teinte par la saturation (le gris n'a pas de teinte signifiante)
+    const satWeight = Math.min(a.s, b.s) / 100;
+    const ds = Math.abs(a.s - b.s);
+    const dl = Math.abs(a.l - b.l);
+    return Math.sqrt((dh * 0.5 * satWeight) ** 2 + (ds * 0.5) ** 2 + dl ** 2);
+  }
+};
+
+/* =====================================================================
+ *  MODULE : AudioEngine — 100% Web Audio API
+ * ===================================================================== */
+const AudioEngine = {
+  ctx: null,
+  master: null,
+  reverbBuffer: null,
+  ambientGain: null,
+  started: false,
+
+  init() {
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.9;
+    this.master.connect(this.ctx.destination);
+    this.reverbBuffer = this._makeReverb(2.6, 3.2);
+  },
+
+  // Doit être appelé suite à un geste utilisateur
+  resume() {
+    if (!this.ctx) this.init();
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    if (!this.started) {
+      this.started = true;
+      this._startAmbient();
+    }
+  },
+
+  now() { return this.ctx ? this.ctx.currentTime : 0; },
+
+  _makeReverb(duration, decay) {
+    if (!this.ctx) return null;
+    const rate = this.ctx.sampleRate;
+    const len = Math.floor(rate * duration);
+    const buf = this.ctx.createBuffer(2, len, rate);
+    for (let c = 0; c < 2; c++) {
+      const data = buf.getChannelData(c);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
+  },
+
+  _makeDistortionCurve(amount) {
+    const n = 256;
+    const curve = new Float32Array(n);
+    const k = amount;
+    for (let i = 0; i < n; i++) {
+      const x = (i / n) * 2 - 1;
+      curve[i] = (3 + k) * x * 0.5 * (Math.PI / 2) / (Math.PI / 2 + k * Math.abs(x));
+    }
+    return curve;
+  },
+
+  // Drone ambiant continu 30–40Hz
+  _startAmbient() {
+    if (!this.ctx) return;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.0;
+    g.connect(this.master);
+    this.ambientGain = g;
+
+    const osc1 = this.ctx.createOscillator();
+    osc1.type = 'sine';
+    osc1.frequency.value = 34;
+    const osc2 = this.ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = 37.5; // léger battement
+    // LFO de respiration sur le volume
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.08;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 0.02;
+    lfo.connect(lfoGain);
+    lfoGain.connect(g.gain);
+
+    osc1.connect(g);
+    osc2.connect(g);
+    osc1.start();
+    osc2.start();
+    lfo.start();
+    g.gain.setTargetAtTime(0.05, this.now(), 4);
+  },
+
+  // Enveloppe simple sur un oscillateur unique
+  _voice(opts) {
+    if (!this.ctx) return;
+    const t0 = this.now();
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = opts.type || 'sine';
+    osc.frequency.setValueAtTime(opts.f0, t0);
+    if (opts.f1 != null) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, opts.f1), t0 + opts.dur);
+    }
+    let node = osc;
+    if (opts.shaper) {
+      const ws = this.ctx.createWaveShaper();
+      ws.curve = this._makeDistortionCurve(opts.shaper);
+      ws.oversample = '4x';
+      osc.connect(ws);
+      node = ws;
+    }
+    const attack = Math.min(0.02, opts.dur * 0.2);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(opts.gain, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + opts.dur);
+    node.connect(g);
+    let out = g;
+    if (opts.reverb && this.reverbBuffer) {
+      const conv = this.ctx.createConvolver();
+      conv.buffer = this.reverbBuffer;
+      const wet = this.ctx.createGain();
+      wet.gain.value = opts.reverb;
+      g.connect(conv);
+      conv.connect(wet);
+      wet.connect(this.master);
+    }
+    out.connect(this.master);
+    osc.start(t0);
+    osc.stop(t0 + opts.dur + 0.05);
+  },
+
+  // --- Sons spécifiques ---
+  caress(blob) {
+    const base = blob ? blob.voiceProfile.baseFreq : 100;
+    this._voice({ type: 'sine', f0: base * 0.8, f1: base * 1.6, dur: 0.2, gain: 0.3 });
+  },
+
+  divide(blob) {
+    const base = blob ? blob.voiceProfile.baseFreq : 110;
+    this._voice({ type: 'sawtooth', f0: base, f1: base * 1.4, dur: 0.1, gain: 0.5, shaper: 25 });
+  },
+
+  grow(blob) {
+    const base = blob ? blob.voiceProfile.baseFreq : 120;
+    this._voice({ type: 'triangle', f0: 120, f1: 180, dur: 0.3, gain: 0.25 });
+  },
+
+  shrink(blob, dur) {
+    this._voice({ type: 'sine', f0: 200, f1: 60, dur: clamp(dur || 0.4, 0.2, 1.2), gain: 0.35 });
+  },
+
+  // Mutation : bruit blanc filtré + glitch
+  mutate(blob) {
+    if (!this.ctx) return;
+    const t0 = this.now();
+    const dur = 0.2;
+    const bufLen = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1800, t0);
+    filter.frequency.exponentialRampToValueAtTime(400, t0 + dur);
+    filter.Q.value = 6;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.4, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(this.master);
+    src.start(t0);
+    src.stop(t0 + dur);
+  },
+
+  // Contact : deux oscillateurs harmoniques ratio 3:2
+  contact(a, b) {
+    if (!this.ctx) return;
+    const baseF = ((a ? a.voiceProfile.baseFreq : 110) + (b ? b.voiceProfile.baseFreq : 110)) / 2;
+    this._voice({ type: 'sine', f0: baseF * 2, dur: 0.4, gain: 0.15 });
+    this._voice({ type: 'sine', f0: baseF * 3, dur: 0.4, gain: 0.1 });
+  },
+
+  death(blob) {
+    const base = blob ? blob.voiceProfile.baseFreq : 100;
+    this._voice({ type: blob ? blob.voiceProfile.timbre : 'sine', f0: base, f1: 20, dur: 3.0, gain: 0.6, reverb: 0.8 });
+  }
+};
+
+/* =====================================================================
+ *  CONSTANTES DE JEU
+ * ===================================================================== */
+const MAX_BLOBS = 12;
+const MIN_RADIUS = 20;
+const MUTATION_INTERVAL = 10;   // secondes
+const MUTATION_CHANCE = 0.7;
+const INSTABILITY_PER_MUTATION = 0.12;
+const DEATH_DURATION = 3.0;     // secondes
+const FUSION_TIME = 3.0;        // secondes de contact
+const FUSION_HSL_DISTANCE = 15;
+
+const ALL_TRAITS = [
+  'eye_left', 'eye_right', 'appendage_top', 'appendage_bottom',
+  'membrane_spikes', 'color_shift', 'pulse_fast', 'decay_spots'
+];
+
+/* =====================================================================
+ *  MODULE : Blob — structure de données + helpers de naissance
+ * ===================================================================== */
+function makeVoiceProfile() {
+  const timbres = ['sine', 'triangle', 'sawtooth', 'square'];
+  return {
+    baseFreq: rand(60, 220),
+    timbre: timbres[randInt(0, 3)],
+    personality: Math.random()
+  };
+}
+
+function createBlob(x, y, opts) {
+  opts = opts || {};
+  const radius = opts.radius != null ? opts.radius : rand(40, 70);
+  const pointCount = randInt(6, 8);
+  const membrane = [];
+  for (let i = 0; i < pointCount; i++) {
+    membrane.push({
+      angle: (i / pointCount) * TAU,
+      phase: Math.random() * TAU,
+      speed: rand(0.6, 1.4),
+      amp: rand(0.04, 0.09)
+    });
+  }
+  return {
+    id: nextId(),
+    x, y,
+    radius,
+    color: opts.color ? { ...opts.color } : { h: 0, s: 0, l: 95 },
+    breathPhase: Math.random() * TAU,
+    breathSpeed: opts.breathSpeed != null ? opts.breathSpeed : rand(0.7, 1.1),
+    velocity: { vx: rand(-4, 4), vy: rand(-4, 4) },
+    age: 0,
+    evolutionStage: opts.evolutionStage || 0,
+    instability: opts.instability || 0,
+    traits: opts.traits ? opts.traits.slice() : [],
+    voiceProfile: opts.voiceProfile || makeVoiceProfile(),
+    isDying: false,
+    deathTimer: 0,
+    opacity: opts.opacity != null ? opts.opacity : 0,  // fondu d'apparition
+    // état interne / animations
+    membrane,
+    targetRadius: radius,
+    wiggle: 0,            // distorsion de caresse (0..1)
+    wiggleDir: { x: 0, y: 0 },
+    mutateFlash: 0,       // frisson de mutation (0..1)
+    shiverHold: 0,        // tremblement du long tap
+    colorShiftOffset: rand(0, TAU),
+    contacts: new Map()   // id autre blob -> durée de contact
+  };
+}
+
+/* =====================================================================
+ *  MODULE : BlobRenderer — dessin canvas
+ * ===================================================================== */
+const BlobRenderer = {
+  // rayon respiratoire courant (0.88..1.12)
+  breathFactor(blob) {
+    return 1 + Math.sin(blob.breathPhase) * 0.12;
+  },
+
+  draw(ctx, blob, time) {
+    const breath = this.breathFactor(blob);
+    let r = blob.radius * breath;
+
+    ctx.save();
+    ctx.translate(blob.x, blob.y);
+    ctx.globalAlpha = blob.opacity;
+
+    const rgb = ColorMixer.hslToRgb(blob.color.h, blob.color.s, blob.color.l);
+    const colStr = `rgb(${rgb.r | 0},${rgb.g | 0},${rgb.b | 0})`;
+
+    // halo
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = colStr;
+
+    // --- contour organique via Bézier ---
+    this._traceBody(ctx, blob, r, time);
+
+    // gradient radial (centre plus brillant)
+    const grad = ctx.createRadialGradient(
+      -r * 0.2, -r * 0.2, r * 0.1,
+      0, 0, r * 1.15
+    );
+    const bright = ColorMixer.hslToRgb(blob.color.h, blob.color.s, Math.min(100, blob.color.l + 8));
+    const dark = ColorMixer.hslToRgb(blob.color.h, blob.color.s, Math.max(0, blob.color.l - 18));
+    grad.addColorStop(0, `rgb(${bright.r | 0},${bright.g | 0},${bright.b | 0})`);
+    grad.addColorStop(0.7, colStr);
+    grad.addColorStop(1, `rgb(${dark.r | 0},${dark.g | 0},${dark.b | 0})`);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // traits morphologiques (dans le repère du blob)
+    ctx.shadowBlur = 0;
+    this._drawTraits(ctx, blob, r, colStr, time);
+
+    ctx.restore();
+  },
+
+  _traceBody(ctx, blob, r, time) {
+    const pts = [];
+    const n = blob.membrane.length;
+    for (let i = 0; i < n; i++) {
+      const m = blob.membrane[i];
+      let osc = Math.sin(time * m.speed + m.phase) * m.amp;
+      // distorsion de caresse : étire la membrane dans la direction du geste
+      if (blob.wiggle > 0.001) {
+        const dirAng = Math.atan2(blob.wiggleDir.y, blob.wiggleDir.x);
+        const align = Math.cos(m.angle - dirAng);
+        osc += blob.wiggle * 0.22 * align;
+      }
+      // tremblement (long tap / decay_spots)
+      if (blob.shiverHold > 0.001 || blob.traits.includes('decay_spots')) {
+        const sh = blob.shiverHold * 0.06 + (blob.traits.includes('decay_spots') ? 0.03 : 0);
+        osc += Math.sin(time * 30 + i) * sh;
+      }
+      // mort : déformation erratique
+      if (blob.isDying) {
+        osc += Math.sin(time * 12 + i * 2.3) * 0.25 * (1 - blob.opacity);
+      }
+      const rr = r * (1 + osc);
+      pts.push({ x: Math.cos(m.angle) * rr, y: Math.sin(m.angle) * rr });
+    }
+    // tracé lissé par courbes quadratiques (centres de segments)
+    ctx.beginPath();
+    const first = pts[0], last = pts[n - 1];
+    let mx = (last.x + first.x) / 2, my = (last.y + first.y) / 2;
+    ctx.moveTo(mx, my);
+    for (let i = 0; i < n; i++) {
+      const cur = pts[i];
+      const nxt = pts[(i + 1) % n];
+      const ex = (cur.x + nxt.x) / 2, ey = (cur.y + nxt.y) / 2;
+      ctx.quadraticCurveTo(cur.x, cur.y, ex, ey);
+    }
+    ctx.closePath();
+  },
+
+  _drawTraits(ctx, blob, r, colStr, time) {
+    const t = blob.traits;
+
+    // Excroissances
+    if (t.includes('appendage_top')) {
+      this._appendage(ctx, 0, -r * 0.95, r * 0.28, colStr, time, 1);
+    }
+    if (t.includes('appendage_bottom')) {
+      this._appendage(ctx, 0, r * 0.95, r * 0.38, colStr, time, 1.4);
+    }
+
+    // Pics de membrane
+    if (t.includes('membrane_spikes')) {
+      ctx.fillStyle = colStr;
+      const spikes = 4;
+      for (let i = 0; i < spikes; i++) {
+        const a = (i / spikes) * TAU + Math.sin(time * 0.5 + i) * 0.1 + 0.4;
+        const baseR = r * 0.92;
+        const tipR = r * (1.28 + Math.sin(i * 2.1) * 0.12);
+        const w = 0.16;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a - w) * baseR, Math.sin(a - w) * baseR);
+        ctx.lineTo(Math.cos(a) * tipR, Math.sin(a) * tipR);
+        ctx.lineTo(Math.cos(a + w) * baseR, Math.sin(a + w) * baseR);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Taches de décomposition
+    if (t.includes('decay_spots')) {
+      ctx.fillStyle = 'rgba(20,12,18,0.55)';
+      const seeds = [[0.3, -0.2, 0.22], [-0.35, 0.25, 0.18], [0.1, 0.4, 0.15]];
+      for (const s of seeds) {
+        ctx.beginPath();
+        ctx.ellipse(s[0] * r, s[1] * r, s[2] * r, s[2] * r * 0.8, 0, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    // Yeux
+    if (t.includes('eye_left')) this._eye(ctx, blob, -r * 0.32, -r * 0.1, r * 0.18, time);
+    if (t.includes('eye_right')) this._eye(ctx, blob, r * 0.32, -r * 0.1, r * 0.18, time);
+  },
+
+  _appendage(ctx, x, y, size, colStr, time, lenMul) {
+    const wob = Math.sin(time * 1.5) * size * 0.15;
+    ctx.fillStyle = colStr;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = colStr;
+    ctx.beginPath();
+    ctx.ellipse(x + wob, y, size * 0.55, size * lenMul, 0, 0, TAU);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  },
+
+  _eye(ctx, blob, ex, ey, er, time) {
+    // blanc de l'œil
+    ctx.fillStyle = 'rgba(250,250,250,0.95)';
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, er, er * 1.25, 0, 0, TAU);
+    ctx.fill();
+    // pupille — regarde vers le voisin ciblé
+    let lookX = 0, lookY = 0;
+    if (blob._lookAt) {
+      const dx = blob._lookAt.x - blob.x, dy = blob._lookAt.y - blob.y;
+      const d = Math.hypot(dx, dy) || 1;
+      lookX = (dx / d) * er * 0.4;
+      lookY = (dy / d) * er * 0.4;
+    } else {
+      lookX = Math.cos(time * 0.7) * er * 0.2;
+      lookY = Math.sin(time * 0.9) * er * 0.2;
+    }
+    ctx.fillStyle = '#0a0a0a';
+    ctx.beginPath();
+    ctx.ellipse(ex + lookX, ey + lookY, er * 0.5, er * 0.55, 0, 0, TAU);
+    ctx.fill();
+    // reflet
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath();
+    ctx.arc(ex + lookX - er * 0.15, ey + lookY - er * 0.2, er * 0.12, 0, TAU);
+    ctx.fill();
+  },
+
+  // flash de mort plein écran
+  drawDeathFlash(ctx, w, h, intensity) {
+    ctx.save();
+    ctx.globalAlpha = intensity;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+};
+
+/* =====================================================================
+ *  MODULE : BlobPhysics — mouvement, respiration, collision
+ * ===================================================================== */
+const BlobPhysics = {
+  update(blob, dt, world) {
+    // respiration
+    let bSpeed = blob.breathSpeed;
+    if (blob.traits.includes('pulse_fast')) bSpeed *= 1.8;
+    blob.breathPhase += dt * bSpeed * 1.6;
+
+    // âge
+    blob.age += dt;
+
+    // apparition en fondu
+    if (!blob.isDying && blob.opacity < 1) {
+      blob.opacity = Math.min(1, blob.opacity + dt * 1.5);
+    }
+
+    // tween rayon (grossissement / réduction)
+    if (Math.abs(blob.radius - blob.targetRadius) > 0.1) {
+      blob.radius = lerp(blob.radius, blob.targetRadius, Math.min(1, dt * 6));
+    }
+
+    // décroissance des animations transitoires
+    blob.wiggle = Math.max(0, blob.wiggle - dt * 2.5);
+    blob.mutateFlash = Math.max(0, blob.mutateFlash - dt * 1.6);
+
+    // teinte qui dérive (color_shift)
+    if (blob.traits.includes('color_shift')) {
+      blob.color.h = (blob.color.h + dt * 12) % 360;
+      if (blob.color.s < 50) blob.color.s = Math.min(60, blob.color.s + dt * 6);
+    }
+
+    // --- comportements liés aux traits ---
+    let speedMul = 1;
+    if (blob.traits.includes('appendage_top')) speedMul *= 1.25;
+    if (blob.traits.includes('pulse_fast')) speedMul *= 1.5;
+
+    // mouvement vers les autres (yeux)
+    blob._lookAt = null;
+    if (blob.traits.includes('eye_left') || blob.traits.includes('eye_right')) {
+      const near = this._nearest(blob, world);
+      if (near) {
+        blob._lookAt = near;
+        if (blob.traits.includes('eye_right')) {
+          const dx = near.x - blob.x, dy = near.y - blob.y;
+          const d = Math.hypot(dx, dy) || 1;
+          blob.velocity.vx += (dx / d) * dt * 6;
+          blob.velocity.vy += (dy / d) * dt * 6;
+        }
+      }
+    }
+
+    // mouvement rythmique / directionnel (appendage_bottom)
+    if (blob.traits.includes('appendage_bottom')) {
+      const pulse = Math.sin(blob.breathPhase) * dt * 10;
+      const ang = Math.atan2(blob.velocity.vy, blob.velocity.vx);
+      blob.velocity.vx += Math.cos(ang) * pulse;
+      blob.velocity.vy += Math.sin(ang) * pulse;
+    }
+
+    // dérive flottante aléatoire douce
+    blob.velocity.vx += rand(-1, 1) * dt * 4;
+    blob.velocity.vy += rand(-1, 1) * dt * 4;
+
+    // friction / clamp vitesse
+    const maxV = 22 * speedMul;
+    blob.velocity.vx *= 0.985;
+    blob.velocity.vy *= 0.985;
+    const sp = Math.hypot(blob.velocity.vx, blob.velocity.vy);
+    if (sp > maxV) {
+      blob.velocity.vx = (blob.velocity.vx / sp) * maxV;
+      blob.velocity.vy = (blob.velocity.vy / sp) * maxV;
+    }
+
+    // intégration
+    blob.x += blob.velocity.vx * dt;
+    blob.y += blob.velocity.vy * dt;
+
+    // rebond souple sur les bords
+    const m = blob.radius;
+    if (blob.x < m) { blob.x = m; blob.velocity.vx = Math.abs(blob.velocity.vx) * 0.6; }
+    if (blob.x > world.w - m) { blob.x = world.w - m; blob.velocity.vx = -Math.abs(blob.velocity.vx) * 0.6; }
+    if (blob.y < m) { blob.y = m; blob.velocity.vy = Math.abs(blob.velocity.vy) * 0.6; }
+    if (blob.y > world.h - m) { blob.y = world.h - m; blob.velocity.vy = -Math.abs(blob.velocity.vy) * 0.6; }
+  },
+
+  _nearest(blob, world) {
+    let best = null, bestD = Infinity;
+    for (const o of world.blobs) {
+      if (o === blob || o.isDying) continue;
+      const d = dist2(blob.x, blob.y, o.x, o.y);
+      if (d < bestD) { bestD = d; best = o; }
+    }
+    return best;
+  },
+
+  // collisions + interactions de contact entre toutes les paires
+  resolveContacts(world, dt) {
+    const blobs = world.blobs;
+    for (let i = 0; i < blobs.length; i++) {
+      const a = blobs[i];
+      if (a.isDying) continue;
+      for (let j = i + 1; j < blobs.length; j++) {
+        const b = blobs[j];
+        if (b.isDying) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const ra = a.radius * BlobRenderer.breathFactor(a);
+        const rb = b.radius * BlobRenderer.breathFactor(b);
+        const overlap = ra + rb - d;
+        if (overlap > 0) {
+          this._onContact(a, b, dx, dy, d, overlap, dt, world);
+        } else {
+          // pas de contact -> réinitialise les timers
+          a.contacts.delete(b.id);
+          b.contacts.delete(a.id);
+        }
+      }
+    }
+  },
+
+  _onContact(a, b, dx, dy, d, overlap, dt, world) {
+    const nx = dx / d, ny = dy / d;
+
+    // pics de membrane => répulsion forte
+    const repel = a.traits.includes('membrane_spikes') || b.traits.includes('membrane_spikes');
+
+    // séparation positionnelle douce
+    const push = overlap * 0.5;
+    a.x -= nx * push; a.y -= ny * push;
+    b.x += nx * push; b.y += ny * push;
+
+    if (repel) {
+      a.velocity.vx -= nx * 8; a.velocity.vy -= ny * 8;
+      b.velocity.vx += nx * 8; b.velocity.vy += ny * 8;
+    } else {
+      // influence de mouvement : les vitesses convergent légèrement
+      const avx = (a.velocity.vx + b.velocity.vx) * 0.5;
+      const avy = (a.velocity.vy + b.velocity.vy) * 0.5;
+      a.velocity.vx = lerp(a.velocity.vx, avx, 0.04);
+      a.velocity.vy = lerp(a.velocity.vy, avy, 0.04);
+      b.velocity.vx = lerp(b.velocity.vx, avx, 0.04);
+      b.velocity.vy = lerp(b.velocity.vy, avy, 0.04);
+    }
+
+    // mélange de couleur progressif (1% par frame de contact)
+    // color_shift contamine plus fortement
+    const aRate = b.traits.includes('color_shift') ? 0.02 : 0.01;
+    const bRate = a.traits.includes('color_shift') ? 0.02 : 0.01;
+    const ca = ColorMixer.mixHsl(a.color, b.color, aRate);
+    const cb = ColorMixer.mixHsl(b.color, a.color, bRate);
+    a.color = ca; b.color = cb;
+
+    // son de contact (throttle par paire)
+    const key = b.id;
+    const prev = a.contacts.get(key) || 0;
+    if (prev === 0) AudioEngine.contact(a, b);
+    const newDur = prev + dt;
+    a.contacts.set(b.id, newDur);
+    b.contacts.set(a.id, newDur);
+
+    // fusion si couleurs proches + contact prolongé
+    if (newDur >= FUSION_TIME && ColorMixer.distance(a.color, b.color) < FUSION_HSL_DISTANCE) {
+      world.requestFusion(a, b);
+    }
+  }
+};
+
+/* =====================================================================
+ *  MODULE : BlobEvolution — mutation, application des traits, mort
+ * ===================================================================== */
+const BlobEvolution = {
+  mutationClock: 0,
+
+  update(dt, world) {
+    // mort en cours
+    for (const blob of world.blobs) {
+      if (blob.isDying) {
+        blob.deathTimer += dt;
+        const p = clamp(blob.deathTimer / DEATH_DURATION, 0, 1);
+        blob.opacity = 1 - p;
+      }
+    }
+
+    // horloge de mutation globale (toutes les 10s)
+    this.mutationClock += dt;
+    if (this.mutationClock >= MUTATION_INTERVAL) {
+      this.mutationClock -= MUTATION_INTERVAL;
+      for (const blob of world.blobs) {
+        if (blob.isDying) continue;
+        if (Math.random() < MUTATION_CHANCE) this.mutate(blob, world);
+      }
+    }
+  },
+
+  mutate(blob, world) {
+    const available = ALL_TRAITS.filter(t => !blob.traits.includes(t));
+    if (available.length === 0) {
+      // plus de traits disponibles -> instabilité monte quand même
+      blob.instability = Math.min(1, blob.instability + INSTABILITY_PER_MUTATION);
+    } else {
+      const trait = available[randInt(0, available.length - 1)];
+      blob.traits.push(trait);
+      blob.evolutionStage = Math.min(8, blob.evolutionStage + 1);
+      blob.instability = Math.min(1, blob.instability + INSTABILITY_PER_MUTATION);
+      this._applyTraitColor(blob, trait);
+    }
+    blob.mutateFlash = 1;
+    AudioEngine.mutate(blob);
+
+    if (blob.instability >= 1.0 && !blob.isDying) {
+      this.kill(blob);
+    }
+  },
+
+  _applyTraitColor(blob, trait) {
+    // certaines mutations donnent une teinte au blob initialement blanc
+    if (blob.color.s < 10) {
+      blob.color.h = rand(0, 360);
+      blob.color.s = rand(35, 65);
+      blob.color.l = clamp(blob.color.l - rand(5, 15), 45, 80);
+    } else {
+      blob.color.h = (blob.color.h + rand(-25, 25) + 360) % 360;
+      blob.color.s = clamp(blob.color.s + rand(-8, 12), 20, 85);
+    }
+    if (trait === 'decay_spots') {
+      blob.color.l = clamp(blob.color.l - 10, 30, 80);
+    }
+  },
+
+  kill(blob) {
+    if (blob.isDying) return;
+    blob.isDying = true;
+    blob.deathTimer = 0;
+    AudioEngine.death(blob);
+  }
+};
+
+/* =====================================================================
+ *  MODULE : World — état global du jeu
+ * ===================================================================== */
+const World = {
+  blobs: [],
+  w: 0, h: 0,
+  deathFlash: 0,
+  _fusions: [],
+
+  reset(w, h) {
+    this.blobs.length = 0;
+    this.w = w; this.h = h;
+    this.deathFlash = 0;
+    this._fusions.length = 0;
+    BlobEvolution.mutationClock = 0;
+    // blob de départ au centre, blanc
+    this.blobs.push(createBlob(w / 2, h / 2, {
+      radius: 55,
+      color: { h: 0, s: 0, l: 95 },
+      opacity: 0
+    }));
+  },
+
+  spawn(blob) {
+    if (this.blobs.length >= MAX_BLOBS) return false;
+    this.blobs.push(blob);
+    return true;
+  },
+
+  requestFusion(a, b) {
+    // évite les doublons
+    for (const f of this._fusions) {
+      if ((f.a === a && f.b === b) || (f.a === b && f.b === a)) return;
+    }
+    this._fusions.push({ a, b });
+  },
+
+  processFusions() {
+    for (const { a, b } of this._fusions) {
+      if (a.isDying || b.isDying) continue;
+      const ia = this.blobs.indexOf(a), ib = this.blobs.indexOf(b);
+      if (ia === -1 || ib === -1) continue;
+      // a absorbe b
+      a.radius = (a.radius + b.radius) * 0.75;
+      a.targetRadius = a.radius;
+      a.x = (a.x + b.x) / 2;
+      a.y = (a.y + b.y) / 2;
+      a.color = ColorMixer.mixHsl(a.color, b.color, 0.5);
+      a.evolutionStage = Math.max(a.evolutionStage, b.evolutionStage);
+      a.instability = Math.min(0.99, Math.max(a.instability, b.instability));
+      // hérite des traits manquants
+      for (const t of b.traits) if (!a.traits.includes(t)) a.traits.push(t);
+      // retire b
+      this.blobs.splice(ib, 1);
+      AudioEngine.grow(a);
+    }
+    this._fusions.length = 0;
+  },
+
+  removeDead() {
+    for (let i = this.blobs.length - 1; i >= 0; i--) {
+      const b = this.blobs[i];
+      if (b.isDying && b.deathTimer >= DEATH_DURATION) {
+        this.blobs.splice(i, 1);
+        this.deathFlash = 1; // flash blanc
+      }
+    }
+  },
+
+  // blob le plus proche d'un point (pour le ciblage tactile)
+  pick(x, y) {
+    let best = null, bestD = Infinity;
+    for (const b of this.blobs) {
+      if (b.isDying) continue;
+      const d = dist2(x, y, b.x, b.y);
+      if (d < bestD) { bestD = d; best = b; }
+    }
+    return best;
+  }
+};
+
+/* =====================================================================
+ *  MODULE : Interactions de gameplay (gestes -> effets)
+ * ===================================================================== */
+const Gestures = {
+  caress(blob, dirX, dirY) {
+    if (!blob) return;
+    blob.wiggle = 1;
+    const d = Math.hypot(dirX, dirY) || 1;
+    blob.wiggleDir.x = dirX / d;
+    blob.wiggleDir.y = dirY / d;
+    // s'oriente vers le geste
+    blob.velocity.vx += (dirX / d) * 6;
+    blob.velocity.vy += (dirY / d) * 6;
+    AudioEngine.caress(blob);
+  },
+
+  tapDivide(blob) {
+    if (!blob) return;
+    if (World.blobs.length >= MAX_BLOBS) return;
+    // mutation légère héritée
+    const childRadius = clamp(blob.radius * rand(0.85, 1.15), MIN_RADIUS, 90);
+    const childColor = {
+      h: (blob.color.h + rand(-10, 10) + 360) % 360,
+      s: clamp(blob.color.s + rand(-5, 5), 0, 100),
+      l: clamp(blob.color.l + rand(-3, 3), 0, 100)
+    };
+    const ang = rand(0, TAU);
+    const off = blob.radius + childRadius * 0.6;
+    const child = createBlob(
+      blob.x + Math.cos(ang) * off,
+      blob.y + Math.sin(ang) * off,
+      {
+        radius: childRadius,
+        color: childColor,
+        instability: blob.instability * 0.3,
+        evolutionStage: Math.max(0, blob.evolutionStage - 1),
+        // hérite 70-80% des traits
+        traits: blob.traits.filter(() => Math.random() < 0.75),
+        breathSpeed: blob.breathSpeed * rand(0.85, 1.15),
+        voiceProfile: {
+          baseFreq: clamp(blob.voiceProfile.baseFreq * rand(0.9, 1.1), 50, 240),
+          timbre: blob.voiceProfile.timbre,
+          personality: clamp(blob.voiceProfile.personality + rand(-0.1, 0.1), 0, 1)
+        },
+        opacity: 0
+      }
+    );
+    // pincement : petite impulsion d'éloignement mutuel
+    blob.velocity.vx -= Math.cos(ang) * 8;
+    blob.velocity.vy -= Math.sin(ang) * 8;
+    child.velocity.vx = Math.cos(ang) * 12;
+    child.velocity.vy = Math.sin(ang) * 12;
+    World.spawn(child);
+    AudioEngine.divide(blob);
+  },
+
+  doubleTapGrow(blob) {
+    if (!blob) return;
+    blob.targetRadius = Math.min(90, blob.radius * 1.2);
+    AudioEngine.grow(blob);
+  },
+
+  longTapShrink(blob, holdSeconds) {
+    if (!blob) return;
+    blob.targetRadius = Math.max(MIN_RADIUS, blob.radius * 0.8);
+    AudioEngine.shrink(blob, 0.3 + holdSeconds * 0.5);
+  }
+};
+
+/* =====================================================================
+ *  MODULE : InputHandler — touch + mouse, détection des gestes
+ * ===================================================================== */
+const InputHandler = {
+  canvas: null,
+  active: false,
+  // état du pointeur courant
+  startX: 0, startY: 0,
+  lastX: 0, lastY: 0,
+  startTime: 0,
+  moved: false,
+  targetBlob: null,
+  longTimer: null,
+  longFired: false,
+  shiverBlob: null,
+  lastTapTime: 0,
+  lastTapBlob: null,
+  // seuils
+  MOVE_THRESHOLD: 10,     // px
+  SWIPE_VELOCITY: 0.35,   // px/ms
+  TAP_MAX_MS: 200,
+  DOUBLE_TAP_MS: 300,
+  LONG_PRESS_MS: 600,
+
+  init(canvas) {
+    this.canvas = canvas;
+    const opts = { passive: false };
+    canvas.addEventListener('touchstart', e => this._down(e), opts);
+    canvas.addEventListener('touchmove', e => this._move(e), opts);
+    canvas.addEventListener('touchend', e => this._up(e), opts);
+    canvas.addEventListener('touchcancel', e => this._up(e), opts);
+    canvas.addEventListener('mousedown', e => this._down(e), opts);
+    window.addEventListener('mousemove', e => { if (this.active) this._move(e); }, opts);
+    window.addEventListener('mouseup', e => { if (this.active) this._up(e); }, opts);
+  },
+
+  _pos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const src = e.touches && e.touches[0] ? e.touches[0]
+              : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e);
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  },
+
+  _down(e) {
+    e.preventDefault();
+    if (e.touches && e.touches.length > 1) return; // mono-touch
+    const p = this._pos(e);
+    this.active = true;
+    this.startX = this.lastX = p.x;
+    this.startY = this.lastY = p.y;
+    this.startTime = performance.now();
+    this.moved = false;
+    this.longFired = false;
+    this.targetBlob = World.pick(p.x, p.y);
+
+    if (this.targetBlob) {
+      this.shiverBlob = this.targetBlob;
+      const target = this.targetBlob;
+      this.longTimer = setTimeout(() => {
+        if (!this.active || this.moved) return;
+        this.longFired = true;
+        // appliqué à la fin selon durée; ici on démarre le tremblement
+      }, this.LONG_PRESS_MS);
+    }
+  },
+
+  _move(e) {
+    if (!this.active) return;
+    e.preventDefault();
+    const p = this._pos(e);
+    const dx = p.x - this.startX, dy = p.y - this.startY;
+    if (!this.moved && Math.hypot(dx, dy) > this.MOVE_THRESHOLD) {
+      this.moved = true;
+      clearTimeout(this.longTimer);
+      this.shiverBlob = null;
+    }
+    this.lastX = p.x;
+    this.lastY = p.y;
+    // tremblement pendant le maintien immobile : géré dans update()
+  },
+
+  _up(e) {
+    if (!this.active) return;
+    e.preventDefault();
+    this.active = false;
+    clearTimeout(this.longTimer);
+    const now = performance.now();
+    const dt = now - this.startTime;
+    const p = this._pos(e);
+    const dx = p.x - this.startX, dy = p.y - this.startY;
+    const distMoved = Math.hypot(dx, dy);
+    const velocity = distMoved / Math.max(1, dt);
+    const blob = this.targetBlob;
+
+    if (this.shiverBlob) { this.shiverBlob.shiverHold = 0; }
+
+    // 1) Caresse : glissement rapide
+    if (this.moved && velocity >= this.SWIPE_VELOCITY) {
+      Gestures.caress(blob || World.pick(this.startX, this.startY), dx, dy);
+    }
+    // glissement lent : on ne déclenche rien de spécial
+    else if (this.moved) {
+      // léger frétillement de fin de glissement
+      if (blob) Gestures.caress(blob, dx, dy);
+    }
+    // 4) Long tap : maintien > 600ms sans bouger
+    else if (dt >= this.LONG_PRESS_MS) {
+      Gestures.longTapShrink(blob, dt / 1000);
+    }
+    // 2/3) Tap court
+    else if (dt < this.TAP_MAX_MS) {
+      const isDouble = (now - this.lastTapTime) < this.DOUBLE_TAP_MS
+                       && this.lastTapBlob && blob && this.lastTapBlob === blob;
+      if (isDouble) {
+        Gestures.doubleTapGrow(blob);
+        this.lastTapTime = 0;
+        this.lastTapBlob = null;
+      } else {
+        // tap simple -> division
+        Gestures.tapDivide(blob);
+        this.lastTapTime = now;
+        this.lastTapBlob = blob;
+      }
+    }
+    else {
+      // entre 200 et 600ms, immobile : considéré comme tap simple
+      Gestures.tapDivide(blob);
+    }
+
+    this.targetBlob = null;
+    this.shiverBlob = null;
+  },
+
+  // tremblement continu pendant un maintien immobile
+  update() {
+    if (this.active && !this.moved && this.shiverBlob) {
+      const held = (performance.now() - this.startTime) / 1000;
+      if (held > 0.15) {
+        this.shiverBlob.shiverHold = Math.min(1, (held - 0.15) * 1.5);
+      }
+    }
+  }
+};
+
+/* =====================================================================
+ *  MODULE : ScreenManager — transition démarrage -> jeu
+ * ===================================================================== */
+const ScreenManager = {
+  startScreen: null,
+  startCanvas: null,
+  startCtx: null,
+  startText: null,
+  gameCanvas: null,
+  handHint: null,
+  inGame: false,
+  startBreath: 0,
+  rafStart: 0,
+  hintShown: false,
+
+  init() {
+    this.startScreen = document.getElementById('startScreen');
+    this.startCanvas = document.getElementById('startCanvas');
+    this.startText = document.getElementById('startText');
+    this.gameCanvas = document.getElementById('gameCanvas');
+    this.handHint = document.getElementById('handHint');
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.startCanvas.width = 200 * dpr;
+    this.startCanvas.height = 200 * dpr;
+    this.startCanvas.style.width = '200px';
+    this.startCanvas.style.height = '200px';
+    this.startCtx = this.startCanvas.getContext('2d');
+    this.startCtx.scale(dpr, dpr);
+
+    // texte en fondu après 1.5s
+    setTimeout(() => this.startText.classList.add('visible'), 1500);
+
+    // animation du blob de démarrage
+    const loop = () => {
+      if (this.inGame) return;
+      this._drawStartBlob();
+      this.rafStart = requestAnimationFrame(loop);
+    };
+    loop();
+
+    // premier geste -> démarre
+    const startHandler = (e) => {
+      e.preventDefault();
+      this.enterGame();
+    };
+    this.startScreen.addEventListener('touchstart', startHandler, { passive: false });
+    this.startScreen.addEventListener('mousedown', startHandler, { passive: false });
+  },
+
+  _drawStartBlob() {
+    const ctx = this.startCtx;
+    ctx.clearRect(0, 0, 200, 200);
+    this.startBreath += 0.03;
+    const t = this.startBreath;
+    const cx = 100, cy = 100;
+    const baseR = 40;
+    const breath = 1 + Math.sin(t) * 0.1;
+    const r = baseR * breath;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = '#ffffff';
+
+    const n = 7;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU;
+      const osc = Math.sin(t * 1.2 + i * 1.7) * 0.06;
+      const rr = r * (1 + osc);
+      pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr });
+    }
+    ctx.beginPath();
+    let mx = (pts[n - 1].x + pts[0].x) / 2, my = (pts[n - 1].y + pts[0].y) / 2;
+    ctx.moveTo(mx, my);
+    for (let i = 0; i < n; i++) {
+      const cur = pts[i], nxt = pts[(i + 1) % n];
+      const ex = (cur.x + nxt.x) / 2, ey = (cur.y + nxt.y) / 2;
+      ctx.quadraticCurveTo(cur.x, cur.y, ex, ey);
+    }
+    ctx.closePath();
+    const grad = ctx.createRadialGradient(-8, -8, 4, 0, 0, r * 1.2);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.7, '#f0f0f0');
+    grad.addColorStop(1, '#bdbdbd');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+  },
+
+  enterGame() {
+    if (this.inGame) return;
+    this.inGame = true;
+    cancelAnimationFrame(this.rafStart);
+
+    // contexte audio (politique navigateur : geste requis)
+    AudioEngine.resume();
+
+    // fondu sortant écran de démarrage
+    this.startScreen.classList.add('fading');
+    setTimeout(() => { this.startScreen.style.display = 'none'; }, 850);
+
+    // fondu entrant du canvas + démarrage de la boucle
+    GameLoop.start(this.gameCanvas);
+    requestAnimationFrame(() => this.gameCanvas.classList.add('visible'));
+
+    // indice de main (première fois seulement), s'estompe après 5s
+    if (!this.hintShown) {
+      this.hintShown = true;
+      setTimeout(() => this.handHint.classList.add('visible'), 1400);
+      setTimeout(() => this.handHint.classList.remove('visible'), 6400);
+    }
+  }
+};
+
+/* =====================================================================
+ *  MODULE : GameLoop — requestAnimationFrame, update + rendu
+ * ===================================================================== */
+const GameLoop = {
+  canvas: null,
+  ctx: null,
+  dpr: 1,
+  lastTime: 0,
+  running: false,
+  time: 0, // temps continu pour les oscillations visuelles
+
+  start(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this._resize();
+    window.addEventListener('resize', () => this._resize());
+    window.addEventListener('orientationchange', () => setTimeout(() => this._resize(), 200));
+
+    World.reset(this.cssW, this.cssH);
+    InputHandler.init(canvas);
+
+    this.running = true;
+    this.lastTime = performance.now();
+    const frame = (now) => {
+      if (!this.running) return;
+      let dt = (now - this.lastTime) / 1000;
+      this.lastTime = now;
+      if (dt > 0.05) dt = 0.05; // clamp en cas de pause d'onglet
+      this.time += dt;
+      this._update(dt);
+      this._render();
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  },
+
+  _resize() {
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.cssW = window.innerWidth;
+    this.cssH = window.innerHeight;
+    this.canvas.width = Math.floor(this.cssW * this.dpr);
+    this.canvas.height = Math.floor(this.cssH * this.dpr);
+    this.canvas.style.width = this.cssW + 'px';
+    this.canvas.style.height = this.cssH + 'px';
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (World.w) { World.w = this.cssW; World.h = this.cssH; }
+  },
+
+  _update(dt) {
+    InputHandler.update();
+    const world = World;
+    for (const blob of world.blobs) {
+      BlobPhysics.update(blob, dt, world);
+    }
+    BlobPhysics.resolveContacts(world, dt);
+    BlobEvolution.update(dt, world);
+    world.processFusions();
+    world.removeDead();
+
+    if (world.deathFlash > 0) {
+      world.deathFlash = Math.max(0, world.deathFlash - dt * 2.2);
+    }
+  },
+
+  _render() {
+    const ctx = this.ctx;
+    // fond noir chaud avec léger trail pour douceur
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(10,10,10,0.35)';
+    ctx.fillRect(0, 0, this.cssW, this.cssH);
+
+    // additif léger pour les halos lumineux
+    ctx.globalCompositeOperation = 'lighter';
+    for (const blob of World.blobs) {
+      BlobRenderer.draw(ctx, blob, this.time);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // flash de mort
+    if (World.deathFlash > 0.01) {
+      BlobRenderer.drawDeathFlash(ctx, this.cssW, this.cssH, World.deathFlash * 0.7);
+    }
+  }
+};
+
+/* =====================================================================
+ *  BOOT
+ * ===================================================================== */
+window.addEventListener('load', () => {
+  ScreenManager.init();
+});
+// empêche le scroll/zoom global sur mobile
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+
+})();
+</script>
+</body>
+</html>
