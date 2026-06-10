@@ -40,8 +40,10 @@
   #startText.visible { opacity: 1; }
 
   #gameCanvas {
-    position: absolute; inset: 0; display: block; background: var(--bg);
+    position: absolute; inset: 0; display: block; background: #07060a;
     z-index: 10; opacity: 0; transition: opacity 600ms ease;
+    /* flou d'objectif onirique */
+    filter: blur(2.2px) saturate(1.2) contrast(1.02);
   }
   #gameCanvas.visible { opacity: 1; }
 
@@ -486,14 +488,16 @@ const BlobRenderer = {
 
     ctx.save();
     ctx.translate(blob.x, blob.y);
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = `rgba(255,255,255,${0.85 - dark})`;
+    // gros halo chaud -> impression de subsurface / chair translucide
+    ctx.shadowBlur = 26;
+    ctx.shadowColor = `rgba(255,200,188,${0.55 - dark*0.6})`;
     this._traceBody(ctx, blob, r, time);
-    const lEdge = clamp(78 - dark*55, 18, 90);
-    const grad = ctx.createRadialGradient(-r*0.25, -r*0.25, r*0.1, 0, 0, r*1.15);
-    grad.addColorStop(0, `hsl(0,0%,${clamp(99-dark*40,30,100)}%)`);
-    grad.addColorStop(0.7, `hsl(0,0%,${clamp(90-dark*45,20,95)}%)`);
-    grad.addColorStop(1, `hsl(265,${dark*30}%,${lEdge}%)`);
+    // crème chaud lumineux au coeur -> peau pêche -> bord rosé
+    const grad = ctx.createRadialGradient(-r*0.28, -r*0.30, r*0.08, 0, 0, r*1.18);
+    grad.addColorStop(0,    `hsl(36,${clamp(34-dark*14,0,40)}%,${clamp(98-dark*42,30,100)}%)`);
+    grad.addColorStop(0.55, `hsl(24,${clamp(40-dark*10,10,55)}%,${clamp(90-dark*44,22,94)}%)`);
+    grad.addColorStop(0.85, `hsl(${dark>0.15?300:355},${clamp(42+dark*8,20,60)}%,${clamp(80-dark*40,18,86)}%)`);
+    grad.addColorStop(1,    `hsl(${dark>0.15?295:350},${clamp(45+dark*10,20,65)}%,${clamp(72-dark*40,14,80)}%)`);
     ctx.fillStyle = grad;
     ctx.fill();
 
@@ -537,10 +541,11 @@ const BlobRenderer = {
 
   _drawTentacles(ctx, blob, time, dark) {
     if (!blob.tentacles.length) return;
-    const col = `hsl(0,0%,${clamp(95-dark*45,25,97)}%)`;
+    // même chair chaude que le corps -> excroissances translucides
+    const col = `hsl(28,${clamp(30-dark*12,6,40)}%,${clamp(93-dark*44,24,95)}%)`;
     ctx.fillStyle = col;
-    ctx.shadowBlur = 14;
-    ctx.shadowColor = `rgba(255,255,255,${0.55-dark*0.5})`;
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = `rgba(255,205,192,${0.5-dark*0.45})`;
     for (const tent of blob.tentacles) {
       if (tent.grow < 0.02) continue;
       const pts = tentaclePoints(blob, tent, time);
@@ -1105,7 +1110,7 @@ const ScreenManager = {
     const t = this.startBreath, cx=100, cy=100, baseR=30;
     const r = baseR*(1+Math.sin(t)*0.1);
     ctx.save(); ctx.translate(cx, cy);
-    ctx.shadowBlur = 22; ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 24; ctx.shadowColor = 'rgba(255,225,215,0.95)';
     const n = 7, pts = [];
     for (let i = 0; i < n; i++) {
       const a = (i/n)*TAU, osc = Math.sin(t*1.0 + i*1.7)*0.06, rr = r*(1+osc);
@@ -1119,7 +1124,7 @@ const ScreenManager = {
     }
     ctx.closePath();
     const g = ctx.createRadialGradient(-6,-6,3,0,0,r*1.2);
-    g.addColorStop(0,'#ffffff'); g.addColorStop(0.7,'#f0f0f0'); g.addColorStop(1,'#bdbdbd');
+    g.addColorStop(0,'#fffaf6'); g.addColorStop(0.6,'#f7e6df'); g.addColorStop(1,'#e0b8b0');
     ctx.fillStyle = g; ctx.fill(); ctx.restore();
   },
   enterGame() {
@@ -1139,6 +1144,64 @@ const ScreenManager = {
 };
 
 /* =====================================================================
+ *  MODULE : Backdrop — nébuleuse sombre, bokeh flou, poussières
+ * ===================================================================== */
+const Backdrop = {
+  orbs: [], sparkles: [], inited: false, palette: [140, 165, 200, 280, 320, 25],
+  init(w, h) {
+    this.orbs.length = 0; this.sparkles.length = 0;
+    for (let i = 0; i < 6; i++) this.orbs.push({
+      x: rand(0,w), y: rand(0,h), r: rand(110, 260),
+      hue: pick(this.palette), sat: rand(45, 72), lit: rand(34, 52),
+      alpha: rand(0.10, 0.22), vx: rand(-5,5), vy: rand(-5,5),
+      phase: rand(0,TAU), pulse: rand(0.04, 0.12)
+    });
+    for (let i = 0; i < 36; i++) this.sparkles.push({
+      x: rand(0,w), y: rand(0,h), r: rand(1, 3.2), big: Math.random() < 0.28,
+      hue: pick(this.palette), phase: rand(0,TAU), tw: rand(0.3, 1.1),
+      vx: rand(-3,3), vy: rand(-4,1.5)
+    });
+    this.inited = true;
+  },
+  draw(ctx, time, w, h) {
+    if (!this.inited) this.init(w, h);
+    // base sombre, légèrement teintée et lentement mouvante
+    const t = time*0.05;
+    const g = ctx.createLinearGradient(0, 0, w*0.4, h);
+    g.addColorStop(0,   `hsl(${150+Math.sin(t)*20|0},32%,5%)`);
+    g.addColorStop(0.5, `hsl(${262+Math.sin(t*0.7)*30|0},36%,6%)`);
+    g.addColorStop(1,   `hsl(${320+Math.sin(t*1.1)*25|0},30%,5%)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const o of this.orbs) {
+      o.x += o.vx*0.016; o.y += o.vy*0.016;
+      if (o.x < -o.r) o.x = w+o.r; else if (o.x > w+o.r) o.x = -o.r;
+      if (o.y < -o.r) o.y = h+o.r; else if (o.y > h+o.r) o.y = -o.r;
+      const a = o.alpha*(0.7 + 0.3*Math.sin(time*o.pulse + o.phase));
+      const rg = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
+      rg.addColorStop(0, `hsla(${o.hue},${o.sat}%,${o.lit}%,${a})`);
+      rg.addColorStop(1, `hsla(${o.hue},${o.sat}%,${o.lit}%,0)`);
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, TAU); ctx.fill();
+    }
+    for (const s of this.sparkles) {
+      s.x += s.vx*0.016; s.y += s.vy*0.016;
+      if (s.x < -6) s.x = w+6; else if (s.x > w+6) s.x = -6;
+      if (s.y < -6) s.y = h+6; else if (s.y > h+6) s.y = -6;
+      const a = 0.25 + 0.55*Math.abs(Math.sin(time*s.tw + s.phase));
+      const rr = s.big ? s.r*4.5 : s.r;
+      const al = s.big ? a*0.22 : a*0.85;
+      const rg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, rr);
+      rg.addColorStop(0, `hsla(${s.hue},55%,82%,${al})`);
+      rg.addColorStop(1, `hsla(${s.hue},55%,82%,0)`);
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+};
+
+/* =====================================================================
  *  MODULE : GameLoop
  * ===================================================================== */
 const GameLoop = {
@@ -1149,6 +1212,7 @@ const GameLoop = {
     window.addEventListener('resize', ()=>this._resize());
     window.addEventListener('orientationchange', ()=>setTimeout(()=>this._resize(),200));
     World.reset(this.cssW, this.cssH);
+    Backdrop.init(this.cssW, this.cssH);
     InputHandler.init(canvas);
     this.running = true; this.lastTime = performance.now();
     const frame = now => {
@@ -1169,6 +1233,7 @@ const GameLoop = {
     this.canvas.style.width = this.cssW+'px'; this.canvas.style.height = this.cssH+'px';
     this.ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
     if (World.w) { World.w = this.cssW; World.h = this.cssH; }
+    if (Backdrop.inited) Backdrop.init(this.cssW, this.cssH);
   },
   _update(dt) {
     InputHandler.update();
@@ -1182,8 +1247,8 @@ const GameLoop = {
   },
   _render() {
     const ctx = this.ctx;
-    ctx.fillStyle = 'rgba(10,10,10,0.30)';
-    ctx.fillRect(0, 0, this.cssW, this.cssH);
+    // fond nébuleux onirique (remplace le noir + trail)
+    Backdrop.draw(ctx, this.time, this.cssW, this.cssH);
 
     // cordons de matière entre blobs en contact (transfert physique)
     this._drawNecks(ctx);
@@ -1204,7 +1269,7 @@ const GameLoop = {
       if (op < 0.02) continue;
       const w = Math.min(a.radius, c.radius) * 0.34 * strength;
       ctx.globalAlpha = op;
-      drawStrand(ctx, a.x, a.y, c.x, c.y, w, w, `rgba(255,255,255,0.9)`, 12, 0.85);
+      drawStrand(ctx, a.x, a.y, c.x, c.y, w, w, `rgba(255,234,224,0.88)`, 14, 0.85);
       ctx.globalAlpha = 1;
     }
   },
@@ -1218,7 +1283,7 @@ const GameLoop = {
       else { ax = blob.x - Math.cos(te.ang)*blob.radius*2; ay = blob.y - Math.sin(te.ang)*blob.radius*2; }
       const w = lerp(te.childR*0.6, 0.5, k); // s'amincit -> rupture liquide
       ctx.globalAlpha = (1 - k) * blob.opacity;
-      drawStrand(ctx, ax, ay, blob.x, blob.y, w*0.7, w, 'rgba(245,245,245,0.95)', 12, 0.7);
+      drawStrand(ctx, ax, ay, blob.x, blob.y, w*0.7, w, 'rgba(255,236,226,0.92)', 14, 0.7);
       ctx.globalAlpha = 1;
     }
   },
