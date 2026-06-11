@@ -7,11 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>BLOBLIFE</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@1&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #0a0a0a; }
   * {
     margin: 0; padding: 0; box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
@@ -20,24 +16,17 @@
   }
   html, body {
     width: 100%; height: 100%; overflow: hidden;
-    background: #000000; overscroll-behavior: none; touch-action: none;
+    background: #07060a; overscroll-behavior: none; touch-action: none;
   }
   #stage { position: fixed; inset: 0; width: 100%; height: 100%; }
 
   #startScreen {
-    position: absolute; inset: 0; background: #000000;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: absolute; inset: 0; background: #07060a;
+    display: flex; align-items: center; justify-content: center;
     z-index: 20; transition: opacity 800ms ease; opacity: 1;
   }
   #startScreen.fading { opacity: 0; pointer-events: none; }
   #startCanvas { display: block; }
-  #startText {
-    font-family: "DM Serif Display", Georgia, serif; font-style: italic;
-    font-size: 18px; color: rgba(255, 255, 255, 0.6); text-align: center;
-    margin-top: 36px; letter-spacing: 0.5px; opacity: 0;
-    transition: opacity 1500ms ease; padding: 0 24px;
-  }
-  #startText.visible { opacity: 1; }
 
   #gameCanvas {
     position: absolute; inset: 0; display: block; background: #07060a;
@@ -46,32 +35,13 @@
     filter: blur(1.4px) saturate(1.2) contrast(1.02);
   }
   #gameCanvas.visible { opacity: 1; }
-
-  #handHint {
-    position: absolute; z-index: 15; pointer-events: none;
-    color: rgba(255,255,255,0.5); font-family: "DM Serif Display", Georgia, serif;
-    font-style: italic; font-size: 15px; left: 50%; bottom: 48px;
-    transform: translateX(-50%); text-align: center; opacity: 0;
-    transition: opacity 1200ms ease; width: 84%; line-height: 1.6;
-  }
-  #handHint.visible { opacity: 1; }
-  #handHint .glyph {
-    display: block; font-style: normal; font-size: 26px; margin-bottom: 10px;
-    animation: handFloat 2.8s ease-in-out infinite;
-  }
-  @keyframes handFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
 </style>
 </head>
 <body>
 <div id="stage">
   <canvas id="gameCanvas"></canvas>
-  <div id="handHint">
-    <span class="glyph">✦</span>
-    Glisse pour déplacer · tape le corps (il se divise) · tape une excroissance (coupe-la) · maintiens
-  </div>
   <div id="startScreen">
-    <canvas id="startCanvas" width="200" height="200"></canvas>
-    <div id="startText">Touche pour créer la vie</div>
+    <canvas id="startCanvas" width="280" height="280"></canvas>
   </div>
 </div>
 
@@ -145,17 +115,12 @@ const ColorMixer = {
  *  MODULE : AudioEngine — voix de formants, douces et gargouillantes
  * ===================================================================== */
 const VOWELS = {
-  a: [780, 1100, 2700],
-  e: [500, 1650, 2500],
-  i: [330, 2100, 2900],
-  o: [480,  900, 2300],
-  u: [320,  720, 2300],
-  m: [240,  900, 2100]   // nasale "mmm"
+  a: [780, 1100, 2700], e: [500, 1650, 2500], i: [330, 2100, 2900],
+  o: [480, 900, 2300], u: [320, 720, 2300], m: [240, 900, 2100]
 };
 
 const AudioEngine = {
   ctx: null, master: null, reverbBuffer: null, ambientGain: null, started: false,
-
   init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -172,7 +137,6 @@ const AudioEngine = {
     if (!this.started) { this.started = true; this._startAmbient(); }
   },
   now(){ return this.ctx ? this.ctx.currentTime : 0; },
-
   _makeReverb(duration, decay) {
     if (!this.ctx) return null;
     const rate = this.ctx.sampleRate, len = Math.floor(rate*duration);
@@ -183,7 +147,6 @@ const AudioEngine = {
     }
     return buf;
   },
-
   _startAmbient() {
     if (!this.ctx) return;
     const g = this.ctx.createGain(); g.gain.value = 0; g.connect(this.master);
@@ -197,8 +160,6 @@ const AudioEngine = {
     o1.start(); o2.start(); lfo.start();
     g.gain.setTargetAtTime(0.05, this.now(), 5);
   },
-
-  /* Prononce une suite de voyelles (formants qui glissent) + gargouillis */
   speak(blob, phones, opts) {
     if (!this.ctx) return;
     opts = opts || {};
@@ -211,17 +172,14 @@ const AudioEngine = {
     const fScale = (0.9 + personality*0.35) * sizeScale;
     let total = 0; for (const p of phones) total += p.d;
 
-    // source glottique douce (triangle de préférence -> moins agressif)
     const src = this.ctx.createOscillator();
     src.type = blob ? blob.voiceProfile.timbre : 'triangle';
     src.frequency.setValueAtTime(f0, t0);
     src.frequency.linearRampToValueAtTime(Math.max(18, f0End), t0 + total);
 
-    // filtre passe-bas global pour adoucir
     const soft = this.ctx.createBiquadFilter();
     soft.type = 'lowpass'; soft.frequency.value = 2600; soft.Q.value = 0.4;
 
-    // vibrato lent
     const vib = this.ctx.createOscillator(); vib.type='sine';
     vib.frequency.value = 3.5 + personality*2 + (opts.wobble?4:0);
     const vibGain = this.ctx.createGain();
@@ -230,13 +188,11 @@ const AudioEngine = {
 
     const amp = this.ctx.createGain(); amp.gain.setValueAtTime(0, t0);
 
-    // GARGOUILLIS : LFO qui module l'amplitude -> bouillonnement
     const gl = this.ctx.createOscillator(); gl.type='sine';
     gl.frequency.value = rand(5, 9) + personality*3;
     const glDepth = this.ctx.createGain(); glDepth.gain.value = gain*0.16;
     gl.connect(glDepth); glDepth.connect(amp.gain);
 
-    // 3 formants (Q bas -> doux)
     const filters = [0,1,2].map(i => {
       const f = this.ctx.createBiquadFilter();
       f.type = 'bandpass'; f.Q.value = [5, 3.5, 2.5][i];
@@ -273,7 +229,37 @@ const AudioEngine = {
     const end = t + 0.25;
     src.stop(end); vib.stop(end); gl.stop(end);
   },
-
+  pickup(b) {
+    this.speak(b, [{v:'m', d:0.22, amp:0.4}, {v:'u', d:0.14, amp:0.3}],
+      { f0: b? b.voiceProfile.baseFreq*0.8:95, f0End: b? b.voiceProfile.baseFreq*0.9:105, gain:0.12 });
+  },
+  divide(b) {
+    this.speak(b, [{v:'m', d:0.10, amp:0.4}, {v:'o', d:0.14}, {v:'u', d:0.12, amp:0.5}],
+      { f0: b? b.voiceProfile.baseFreq:120, f0End: b? b.voiceProfile.baseFreq*1.25:150, gain:0.2 });
+  },
+  shrink(b, dur) {
+    this.speak(b, [{v:'o', d:0.16}, {v:'u', d:0.22}, {v:'m', d:0.22, amp:0.4}],
+      { f0: b? b.voiceProfile.baseFreq*1.2:165, f0End: b? b.voiceProfile.baseFreq*0.55:65, gain:0.22 });
+  },
+  mutate(b) {
+    this.speak(b, [{v:'m', d:0.10, amp:0.45}, {v:'o', d:0.14}, {v:'u', d:0.12}, {v:'i', d:0.14}],
+      { f0: b? b.voiceProfile.baseFreq:120, f0End: b? b.voiceProfile.baseFreq*1.2:150, gain:0.2, wobble:true });
+    this._wetNoise(0.16, 900, 300, 0.07);
+  },
+  contact(a, b) {
+    const base = ((a?a.voiceProfile.baseFreq:120)+(b?b.voiceProfile.baseFreq:120))/2;
+    this.speak(a, [{v:'m', d:0.16, amp:0.4}, {v:'u', d:0.16, amp:0.45}],
+      { f0: base*0.85, f0End: base*0.95, gain:0.1 });
+  },
+  fuse(b) {
+    this.speak(b, [{v:'m', d:0.22, amp:0.45}, {v:'o', d:0.22}, {v:'u', d:0.30, amp:0.5}],
+      { f0: b? b.voiceProfile.baseFreq:110, f0End: b? b.voiceProfile.baseFreq*0.78:88, gain:0.2, reverb:0.3 });
+  },
+  death(b) {
+    const base = b? b.voiceProfile.baseFreq:110;
+    this.speak(b, [{v:'a', d:0.5}, {v:'o', d:0.5, amp:0.8}, {v:'u', d:0.7, amp:0.6}, {v:'m', d:0.9, amp:0.4}],
+      { f0: base, f0End: 26, gain:0.4, reverb:0.85 });
+  },
   _wetNoise(dur, f0, f1, gain) {
     if (!this.ctx) return;
     const t0 = this.now();
@@ -290,48 +276,6 @@ const AudioEngine = {
     g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
     src.connect(flt); flt.connect(g); g.connect(this.master);
     src.start(t0); src.stop(t0+dur);
-  },
-
-  // ---- utterances : douces, gargouillantes, beaucoup de "m" / "ou" ----
-  pickup(b) { // attrape pour déplacer
-    this.speak(b, [{v:'m', d:0.22, amp:0.4}, {v:'u', d:0.14, amp:0.3}],
-      { f0: b? b.voiceProfile.baseFreq*0.8:95, f0End: b? b.voiceProfile.baseFreq*0.9:105, gain:0.13 });
-  },
-  divide(b) {
-    this.speak(b, [{v:'m', d:0.10, amp:0.4}, {v:'o', d:0.14}, {v:'u', d:0.12, amp:0.5}],
-      { f0: b? b.voiceProfile.baseFreq:120, f0End: b? b.voiceProfile.baseFreq*1.25:150, gain:0.2 });
-  },
-  grow(b) {
-    this.speak(b, [{v:'m', d:0.12, amp:0.4}, {v:'a', d:0.18}, {v:'o', d:0.16}, {v:'u', d:0.2, amp:0.6}],
-      { f0: b? b.voiceProfile.baseFreq:120, f0End: b? b.voiceProfile.baseFreq*1.35:165, gain:0.22 });
-  },
-  shrink(b, dur) {
-    this.speak(b, [{v:'o', d:0.16}, {v:'u', d:0.22}, {v:'m', d:0.22, amp:0.4}],
-      { f0: b? b.voiceProfile.baseFreq*1.2:165, f0End: b? b.voiceProfile.baseFreq*0.55:65, gain:0.22 });
-  },
-  mutate(b) { // gargouillis "mglooouui"
-    this.speak(b, [{v:'m', d:0.10, amp:0.45}, {v:'o', d:0.14}, {v:'u', d:0.12}, {v:'i', d:0.14}],
-      { f0: b? b.voiceProfile.baseFreq:120, f0End: b? b.voiceProfile.baseFreq*1.2:150, gain:0.2, wobble:true });
-    this._wetNoise(0.16, 900, 300, 0.07);
-  },
-  contact(a, b) {
-    const base = ((a?a.voiceProfile.baseFreq:120)+(b?b.voiceProfile.baseFreq:120))/2;
-    this.speak(a, [{v:'m', d:0.16, amp:0.4}, {v:'u', d:0.16, amp:0.45}],
-      { f0: base*0.85, f0End: base*0.95, gain:0.1 });
-  },
-  cut(parent) {
-    this._wetNoise(0.32, 700, 160, 0.12); // séparation liquide, grave
-    this.speak(parent, [{v:'m', d:0.12, amp:0.45}, {v:'a', d:0.10}, {v:'u', d:0.14}],
-      { f0: 150, f0End: 110, gain:0.16, wobble:true });
-  },
-  birthCry(b) {
-    this.speak(b, [{v:'m', d:0.14, amp:0.4}, {v:pick(['o','u']), d:0.16}, {v:'i', d:0.12, amp:0.5}],
-      { f0: b.voiceProfile.baseFreq*0.85, f0End: b.voiceProfile.baseFreq*1.25, gain:0.16 });
-  },
-  death(b) {
-    const base = b? b.voiceProfile.baseFreq:110;
-    this.speak(b, [{v:'a', d:0.5}, {v:'o', d:0.5, amp:0.8}, {v:'u', d:0.7, amp:0.6}, {v:'m', d:0.9, amp:0.4}],
-      { f0: base, f0End: 26, gain:0.4, reverb:0.85 });
   }
 };
 
@@ -346,44 +290,39 @@ const MUTATION_INTERVAL = 10;
 const MUTATION_CHANCE = 0.7;
 const INSTABILITY_PER_MUTATION = 0.12;
 const DEATH_DURATION = 3.0;
-const FUSION_TIME = 3.0;
-const MAX_TENTACLES = 5;
+const FUSION_DELAY = 0.2;     // contact -> fusion quasi immédiate
+const MAX_BUMPS = 8;
 const MAX_SPOTS = 7;
 
 /* =====================================================================
- *  Construction d'un blob
+ *  Construction
  * ===================================================================== */
 function makeVoiceProfile() {
   return {
     baseFreq: rand(80, 190),
-    timbre: pick(['triangle','triangle','sawtooth','sine']), // doux par défaut
+    timbre: pick(['triangle','triangle','sawtooth','sine']),
     personality: Math.random()
   };
 }
 
-function makeTentacle(opts) {
+// boule qui pousse : sur le bord (dist=1) ou à l'intérieur (dist<1, après fusion)
+function makeBump(opts) {
   opts = opts || {};
   return {
-    baseAngle: opts.baseAngle != null ? opts.baseAngle : rand(0, TAU),
-    length: opts.length != null ? opts.length : rand(1.2, 2.4),
-    width:  opts.width  != null ? opts.width  : rand(0.34, 0.52), // base épaisse -> excroissance
-    grow:   opts.grow   != null ? opts.grow   : 0,
-    seed:   rand(0, TAU),
-    waveSpeed: rand(0.4, 0.9),      // ondulation lente
-    waveAmp:   rand(0.12, 0.28),
-    angleDrift: rand(-0.10, 0.10)
+    angle: opts.angle != null ? opts.angle : rand(0, TAU),
+    dist:  opts.dist  != null ? opts.dist  : 1.0,
+    r:     opts.r     != null ? opts.r     : rand(0.30, 0.55),
+    grow:  opts.grow  != null ? opts.grow  : 0,
+    phase: rand(0, TAU),
+    orbitSpeed: rand(0.15, 0.5),
+    bob: rand(0.015, 0.05)
   };
 }
 
 function makeSpot() {
   return {
-    angle: rand(0, TAU),
-    dist:  rand(0.0, 0.55),
-    r:     rand(0.20, 0.38),
-    growth: 0,
-    hue:   rand(0, 360),
-    sat:   rand(28, 52),   // PASTEL : peu saturé
-    lit:   rand(68, 82),   // clair
+    angle: rand(0, TAU), dist: rand(0.0, 0.55), r: rand(0.20, 0.38), growth: 0,
+    hue: rand(0, 360), sat: rand(28, 52), lit: rand(68, 82),
     hueSpeed: rand(1.5, 6) * (Math.random()<0.5?-1:1)
   };
 }
@@ -405,53 +344,25 @@ function createBlob(x, y, opts) {
     evolutionStage: opts.evolutionStage || 0,
     instability: opts.instability || 0,
     traits: opts.traits ? opts.traits.slice() : [],
-    tentacles: opts.tentacles ? opts.tentacles : [],
+    bumps: opts.bumps ? opts.bumps : [],
     spots: opts.spots ? opts.spots : [],
     voiceProfile: opts.voiceProfile || makeVoiceProfile(),
     isDying: false, deathTimer: 0,
     opacity: opts.opacity != null ? opts.opacity : 0,
     membrane,
     targetRadius: radius,
-    wiggle: 0, wiggleDir: { x:0, y:0 },
     mutateFlash: 0, shiverHold: 0,
     contacts: new Map(),
     _lookAt: null,
-    isDragged: false, dragX: x, dragY: y,
-    _tether: null,
-    depth: opts.depth != null ? opts.depth : rand(0, 1)  // 0 = devant net, 1 = fond flou
+    isDragged: false, dragX: x, dragY: y, grabX: 0, grabY: 0, _grab: null,
+    fused: opts.fused || false,
+    fuseCooldown: opts.fuseCooldown != null ? opts.fuseCooldown : 0,
+    depth: opts.depth != null ? opts.depth : rand(0, 1)
   };
 }
 
 /* =====================================================================
- *  Géométrie des tentacules (rendu + détection de coupe)
- *  Enracinées DANS le corps -> vraies excroissances.
- * ===================================================================== */
-function tentaclePoints(blob, tent, time) {
-  const pts = [];
-  const N = 11;
-  const r = blob.radius * BlobRenderer.breathFactor(blob);
-  const ang = tent.baseAngle + Math.sin(time*0.2 + tent.seed)*tent.angleDrift;
-  const dir = { x: Math.cos(ang), y: Math.sin(ang) };
-  const perp = { x: -dir.y, y: dir.x };
-  const rootInset = 0.4;                       // démarre à l'intérieur du corps
-  const baseX = blob.x + dir.x * r*rootInset;
-  const baseY = blob.y + dir.y * r*rootInset;
-  const reach = blob.radius * tent.length * tent.grow + r*(1-rootInset);
-  for (let k = 0; k <= N; k++) {
-    const f = k / N;
-    const along = reach * f;
-    const wave = Math.sin(time*tent.waveSpeed + tent.seed - f*3) * tent.waveAmp * f * blob.radius;
-    const x = baseX + dir.x*along + perp.x*wave;
-    const y = baseY + dir.y*along + perp.y*wave;
-    // largeur : épaisse à la base (fond dans le corps), s'effile en pointe arrondie
-    const w = Math.max(1.5, blob.radius * tent.width * Math.pow(1 - f, 0.55));
-    pts.push({ x, y, w, f });
-  }
-  return pts;
-}
-
-/* =====================================================================
- *  Rendu d'un filament liquide (cordon de cercles) — réutilisable
+ *  Filament liquide (cordon de cercles) — pour le cordon de fusion
  * ===================================================================== */
 function drawStrand(ctx, x1, y1, x2, y2, w1, w2, color, blur, bulge) {
   const steps = 9;
@@ -462,7 +373,7 @@ function drawStrand(ctx, x1, y1, x2, y2, w1, w2, color, blur, bulge) {
     const t = i/steps;
     const x = lerp(x1, x2, t), y = lerp(y1, y2, t);
     let w = lerp(w1, w2, t);
-    if (bulge) w *= (1 - bulge) + bulge*Math.sin(t*Math.PI); // pince les extrémités
+    if (bulge) w *= (1 - bulge) + bulge*Math.sin(t*Math.PI);
     ctx.beginPath(); ctx.arc(x, y, Math.max(0.4, w), 0, TAU); ctx.fill();
   }
   ctx.restore();
@@ -482,49 +393,97 @@ const BlobRenderer = {
     const dark = Math.max(dyingDark*0.5, decayDark);
 
     ctx.save();
-    // profondeur de champ : les blobs du fond sont plus flous et plus diffus
     const depth = blob.depth || 0;
     if (depth > 0.05) ctx.filter = `blur(${(depth*3.2).toFixed(2)}px)`;
-    ctx.globalAlpha = blob.opacity * (1 - depth*0.24);
-
-    // tentacules (sous le corps) -> émergent comme des excroissances
-    this._drawTentacles(ctx, blob, time, dark);
+    const baseAlpha = blob.opacity * (1 - depth*0.24);
 
     ctx.save();
     ctx.translate(blob.x, blob.y);
-    // gros halo chaud -> impression de subsurface / chair translucide
+
+    // ---- corps ----
+    ctx.globalAlpha = baseAlpha * (blob.fused ? 0.42 : 1);  // transparent si fusionné
     ctx.shadowBlur = 26;
     ctx.shadowColor = `rgba(255,200,188,${0.55 - dark*0.6})`;
     this._traceBody(ctx, blob, r, time);
-    // crème-rosé lumineux au coeur -> pêche -> rose profond au bord
-    const grad = ctx.createRadialGradient(-r*0.28, -r*0.30, r*0.08, 0, 0, r*1.18);
-    grad.addColorStop(0,    `hsl(30,${clamp(48-dark*16,0,55)}%,${clamp(96-dark*40,30,100)}%)`);
-    grad.addColorStop(0.5,  `hsl(18,${clamp(58-dark*12,16,70)}%,${clamp(85-dark*42,22,90)}%)`);
-    grad.addColorStop(0.85, `hsl(${dark>0.15?298:2},${clamp(56+dark*6,24,70)}%,${clamp(77-dark*38,18,84)}%)`);
-    grad.addColorStop(1,    `hsl(${dark>0.15?292:348},${clamp(58+dark*8,24,72)}%,${clamp(69-dark*38,14,78)}%)`);
-    ctx.fillStyle = grad;
+    ctx.fillStyle = this._bodyGradient(ctx, r, dark);
     ctx.fill();
 
+    if (blob.fused) {
+      // contour brillant de la membrane translucide
+      ctx.globalAlpha = baseAlpha;
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = Math.max(1.4, r*0.05);
+      ctx.strokeStyle = `hsla(350,55%,84%,0.45)`;
+      ctx.stroke();
+    }
+
+    // ---- taches (à l'intérieur du corps) ----
+    ctx.globalAlpha = baseAlpha;
     ctx.save();
+    this._traceBody(ctx, blob, r, time);
     ctx.clip();
     ctx.shadowBlur = 0;
     this._drawSpots(ctx, blob, r, time);
     ctx.restore();
 
-    this._drawEyes(ctx, blob, r, time);
-    ctx.restore();
+    // ---- boules (sur les bords, ou à l'intérieur si fusionné) ----
+    for (const b of blob.bumps) {
+      if (b.grow < 0.02) continue;
+      const internal = b.dist < 1;
+      const a = b.angle + (internal ? Math.sin(time*b.orbitSpeed + b.phase)*0.2 : 0);
+      const pr = internal ? b.dist*r : r*0.92;
+      const bob = Math.sin(time*0.7 + b.phase) * b.bob * r;
+      const bx = Math.cos(a)*pr, by = Math.sin(a)*pr + bob;
+      const br = r * b.r * b.grow;
+      this._drawBall(ctx, bx, by, br, dark, baseAlpha * (internal ? 0.95 : 1));
+    }
 
+    // ---- yeux ----
+    ctx.globalAlpha = baseAlpha;
+    this._drawEyes(ctx, blob, r, time);
+
+    ctx.restore();
+    ctx.restore();
+  },
+
+  _bodyGradient(ctx, r, dark) {
+    const g = ctx.createRadialGradient(-r*0.28, -r*0.30, r*0.08, 0, 0, r*1.18);
+    g.addColorStop(0,    `hsl(30,${clamp(48-dark*16,0,55)}%,${clamp(96-dark*40,30,100)}%)`);
+    g.addColorStop(0.5,  `hsl(18,${clamp(58-dark*12,16,70)}%,${clamp(85-dark*42,22,90)}%)`);
+    g.addColorStop(0.85, `hsl(${dark>0.15?298:2},${clamp(56+dark*6,24,70)}%,${clamp(77-dark*38,18,84)}%)`);
+    g.addColorStop(1,    `hsl(${dark>0.15?292:348},${clamp(58+dark*8,24,72)}%,${clamp(69-dark*38,14,78)}%)`);
+    return g;
+  },
+
+  _drawBall(ctx, x, y, br, dark, alpha) {
+    if (br < 0.5) return;
+    const g = ctx.createRadialGradient(x-br*0.32, y-br*0.36, br*0.08, x, y, br);
+    g.addColorStop(0,   `hsl(30,46%,${clamp(96-dark*40,30,100)}%)`);
+    g.addColorStop(0.6, `hsl(16,56%,${clamp(84-dark*40,22,90)}%)`);
+    g.addColorStop(1,   `hsl(348,58%,${clamp(72-dark*36,16,80)}%)`);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(255,200,188,0.4)';
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, br, 0, TAU); ctx.fill();
     ctx.restore();
   },
 
   _traceBody(ctx, blob, r, time) {
     const pts = [], n = blob.membrane.length;
+    // déformation "accroche au doigt"
+    let grabAng = 0, grabPull = 0;
+    if (blob._grab) {
+      const lx = blob._grab.fx - blob.x, ly = blob._grab.fy - blob.y;
+      grabAng = Math.atan2(ly, lx);
+      grabPull = clamp(Math.hypot(lx, ly) / r, 0, 1.4);
+    }
     for (let i = 0; i < n; i++) {
       const m = blob.membrane[i];
       let osc = Math.sin(time*m.speed + m.phase)*m.amp;
-      if (blob.wiggle > 0.001) {
-        const dirAng = Math.atan2(blob.wiggleDir.y, blob.wiggleDir.x);
-        osc += blob.wiggle * 0.20 * Math.cos(m.angle - dirAng);
+      if (grabPull > 0.001) {
+        const align = Math.max(0, Math.cos(m.angle - grabAng));
+        osc += grabPull * 0.5 * align * align;   // étirement vers le doigt
       }
       if (blob.shiverHold > 0.001 || blob.instability > 0.6) {
         const sh = blob.shiverHold*0.045 + Math.max(0, blob.instability-0.6)*0.07;
@@ -543,25 +502,6 @@ const BlobRenderer = {
     ctx.closePath();
   },
 
-  _drawTentacles(ctx, blob, time, dark) {
-    if (!blob.tentacles.length) return;
-    // même chair chaude que le corps -> excroissances translucides
-    const col = `hsl(28,${clamp(30-dark*12,6,40)}%,${clamp(93-dark*44,24,95)}%)`;
-    ctx.fillStyle = col;
-    ctx.shadowBlur = 16;
-    ctx.shadowColor = `rgba(255,205,192,${0.5-dark*0.45})`;
-    for (const tent of blob.tentacles) {
-      if (tent.grow < 0.02) continue;
-      const pts = tentaclePoints(blob, tent, time);
-      for (let k = pts.length-1; k >= 0; k--) {
-        const p = pts[k];
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.w, 0, TAU); ctx.fill();
-      }
-    }
-    ctx.shadowBlur = 0;
-  },
-
-  // taches pastel, bords fondus (gradient -> transparent) + léger flou
   _drawSpots(ctx, blob, r, time) {
     ctx.save();
     for (const s of blob.spots) {
@@ -570,9 +510,9 @@ const BlobRenderer = {
       if (sr < 0.5) continue;
       const h = s.hue|0, sat = s.sat|0, lit = s.lit|0;
       const g = ctx.createRadialGradient(sx, sy, sr*0.05, sx, sy, sr*1.2);
-      g.addColorStop(0,    `hsla(${h},${sat}%,${clamp(lit+6,0,100)}%,0.6)`);
-      g.addColorStop(0.5,  `hsla(${h},${sat}%,${lit}%,0.34)`);
-      g.addColorStop(1,    `hsla(${h},${sat}%,${lit}%,0)`);
+      g.addColorStop(0,   `hsla(${h},${sat}%,${clamp(lit+6,0,100)}%,0.6)`);
+      g.addColorStop(0.5, `hsla(${h},${sat}%,${lit}%,0.34)`);
+      g.addColorStop(1,   `hsla(${h},${sat}%,${lit}%,0)`);
       ctx.shadowBlur = sr*0.6; ctx.shadowColor = `hsla(${h},${sat}%,${lit}%,0.4)`;
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(sx, sy, sr*1.2, 0, TAU); ctx.fill();
@@ -585,27 +525,27 @@ const BlobRenderer = {
     if (blob.traits.includes('eye_right')) this._eye(ctx, blob,  r*0.30, -r*0.08, r*0.17, time);
   },
   _eye(ctx, blob, ex, ey, er, time) {
-    ctx.fillStyle = 'rgba(250,250,250,0.96)';
+    ctx.fillStyle = 'rgba(250,248,246,0.96)';
     ctx.beginPath(); ctx.ellipse(ex, ey, er, er*1.25, 0, 0, TAU); ctx.fill();
     let lx, ly;
     if (blob._lookAt) {
       const dx = blob._lookAt.x-blob.x, dy = blob._lookAt.y-blob.y, d = Math.hypot(dx,dy)||1;
       lx = (dx/d)*er*0.4; ly = (dy/d)*er*0.4;
     } else { lx = Math.cos(time*0.5)*er*0.2; ly = Math.sin(time*0.7)*er*0.2; }
-    ctx.fillStyle = '#0a0a0a';
+    ctx.fillStyle = '#1a1012';
     ctx.beginPath(); ctx.ellipse(ex+lx, ey+ly, er*0.5, er*0.55, 0, 0, TAU); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.beginPath(); ctx.arc(ex+lx-er*0.15, ey+ly-er*0.2, er*0.12, 0, TAU); ctx.fill();
   },
 
   drawDeathFlash(ctx, w, h, intensity) {
-    ctx.save(); ctx.globalAlpha = intensity; ctx.fillStyle = '#ffffff';
+    ctx.save(); ctx.globalAlpha = intensity; ctx.fillStyle = '#fff4ee';
     ctx.fillRect(0,0,w,h); ctx.restore();
   }
 };
 
 /* =====================================================================
- *  MODULE : BlobPhysics — tout ralenti, mou, fluide
+ *  MODULE : BlobPhysics
  * ===================================================================== */
 const BlobPhysics = {
   update(blob, dt, world) {
@@ -613,40 +553,18 @@ const BlobPhysics = {
     if (blob.traits.includes('pulse_fast')) bSpeed *= 1.6;
     blob.breathPhase += dt*bSpeed*1.0;
     blob.age += dt;
+    if (blob.fuseCooldown > 0) blob.fuseCooldown -= dt;
 
     if (!blob.isDying && blob.opacity < 1) blob.opacity = Math.min(1, blob.opacity + dt*1.2);
-
     if (Math.abs(blob.radius - blob.targetRadius) > 0.1)
       blob.radius = lerp(blob.radius, blob.targetRadius, Math.min(1, dt*3.5));
-
-    blob.wiggle = Math.max(0, blob.wiggle - dt*1.8);
     blob.mutateFlash = Math.max(0, blob.mutateFlash - dt*1.2);
 
-    for (const t of blob.tentacles) if (t.grow < 1) t.grow = Math.min(1, t.grow + dt*0.35);
+    for (const b of blob.bumps) if (b.grow < 1) b.grow = Math.min(1, b.grow + dt*0.4);
     for (const s of blob.spots) {
       if (s.growth < 1) s.growth = Math.min(1, s.growth + dt*0.45);
       s.hue = (s.hue + s.hueSpeed*dt + 360) % 360;
     }
-
-    // ----- séparation liquide d'un morceau coupé -----
-    if (blob._tether) {
-      const te = blob._tether;
-      te.t += dt;
-      // glisse lentement vers l'extérieur pendant que la matière s'étire
-      blob.x += Math.cos(te.ang)*dt*7;
-      blob.y += Math.sin(te.ang)*dt*7;
-      this._bounds(blob, world);
-      if (te.t >= te.dur) {
-        blob.velocity.vx = te.releaseVX; blob.velocity.vy = te.releaseVY;
-        blob._tether = null;
-      }
-      return;
-    }
-
-    // ----- comportements -----
-    let speedMul = 1;
-    if (blob.traits.includes('pulse_fast')) speedMul *= 1.35;
-    speedMul *= 1 + blob.tentacles.length*0.04;
 
     blob._lookAt = null;
     if (blob.traits.includes('eye_left') || blob.traits.includes('eye_right')) {
@@ -660,27 +578,23 @@ const BlobPhysics = {
       }
     }
 
-    // ----- déplacement -----
     if (blob.isDragged) {
-      // suit le doigt en douceur, et garde l'élan à la fin
-      const k = Math.min(1, dt*12);
-      const nx = lerp(blob.x, blob.dragX, k), ny = lerp(blob.y, blob.dragY, k);
+      // accroche au doigt : la forme suit avec retard élastique -> elle s'étire
+      const fx = blob.dragX, fy = blob.dragY;
+      blob._grab = { fx, fy };
+      const tx = fx - blob.grabX, ty = fy - blob.grabY; // centre cible
+      const k = Math.min(1, dt*7);
+      const nx = lerp(blob.x, tx, k), ny = lerp(blob.y, ty, k);
       let vx = (nx-blob.x)/Math.max(dt,0.001), vy = (ny-blob.y)/Math.max(dt,0.001);
-      const sp = Math.hypot(vx,vy);
-      const cap = 320;
+      const sp = Math.hypot(vx,vy), cap = 340;
       if (sp > cap) { vx = vx/sp*cap; vy = vy/sp*cap; }
       blob.velocity.vx = vx; blob.velocity.vy = vy;
       blob.x = nx; blob.y = ny;
-      // la membrane s'étire dans le sens du mouvement (mou)
-      if (sp > 25) { blob.wiggle = Math.min(0.8, sp/420); blob.wiggleDir.x = vx/sp; blob.wiggleDir.y = vy/sp; }
     } else {
-      if (blob.tentacles.length) {
-        const pulse = Math.sin(blob.breathPhase)*dt*3;
-        const ang = Math.atan2(blob.velocity.vy, blob.velocity.vx);
-        blob.velocity.vx += Math.cos(ang)*pulse; blob.velocity.vy += Math.sin(ang)*pulse;
-      }
+      blob._grab = null;
       blob.velocity.vx += rand(-1,1)*dt*1.6;
       blob.velocity.vy += rand(-1,1)*dt*1.6;
+      let speedMul = blob.traits.includes('pulse_fast') ? 1.35 : 1;
       const maxV = 11*speedMul;
       blob.velocity.vx *= 0.99; blob.velocity.vy *= 0.99;
       const sp = Math.hypot(blob.velocity.vx, blob.velocity.vy);
@@ -719,51 +633,22 @@ const BlobPhysics = {
         const ra = a.radius*BlobRenderer.breathFactor(a);
         const rc = c.radius*BlobRenderer.breathFactor(c);
         const overlap = ra + rc - d;
-        if (overlap > -Math.min(ra,rc)*0.5) {
-          // assez proches -> cordon visible de matière entre eux
-          world.necks.push({ a, c, strength: clamp((overlap + Math.min(ra,rc)*0.5)/Math.min(ra,rc), 0, 1) });
+        const canFuse = a.fuseCooldown <= 0 && c.fuseCooldown <= 0;
+        if (canFuse && overlap > -Math.min(ra,rc)*0.4) {
+          world.necks.push({ a, c, strength: clamp((overlap + Math.min(ra,rc)*0.4)/Math.min(ra,rc), 0, 1) });
         }
-        if (overlap > 0) this._contact(a, c, dx, dy, d, overlap, dt, world);
+        if (overlap > 0 && canFuse) this._contact(a, c, dx, dy, d, overlap, dt, world);
         else { a.contacts.delete(c.id); c.contacts.delete(a.id); }
       }
     }
   },
 
   _contact(a, c, dx, dy, d, overlap, dt, world) {
-    const nx = dx/d, ny = dy/d, push = overlap*0.5;
-    if (!a.isDragged) { a.x -= nx*push; a.y -= ny*push; }
-    if (!c.isDragged) { c.x += nx*push; c.y += ny*push; }
-    const avx = (a.velocity.vx+c.velocity.vx)*0.5, avy = (a.velocity.vy+c.velocity.vy)*0.5;
-    if (!a.isDragged) { a.velocity.vx = lerp(a.velocity.vx, avx, 0.03); a.velocity.vy = lerp(a.velocity.vy, avy, 0.03); }
-    if (!c.isDragged) { c.velocity.vx = lerp(c.velocity.vx, avx, 0.03); c.velocity.vy = lerp(c.velocity.vy, avy, 0.03); }
-
     const prev = a.contacts.get(c.id) || 0;
     if (prev === 0) AudioEngine.contact(a, c);
     const nd = prev + dt;
     a.contacts.set(c.id, nd); c.contacts.set(a.id, nd);
-
-    if (Math.floor(prev*1.1) !== Math.floor(nd*1.1)) {
-      this._contaminate(a, c, world); this._contaminate(c, a, world);
-    }
-    if (nd >= FUSION_TIME) world.requestFusion(a, c);
-  },
-
-  _contaminate(from, to, world) {
-    if (!from.spots.length || to.spots.length >= MAX_SPOTS) return;
-    if (Math.random() > 0.5) return;
-    const src = pick(from.spots);
-    const s = makeSpot();
-    if (to.spots.length) {
-      const blended = ColorMixer.mixHsl(
-        { h: pick(to.spots).hue, s: 45, l: 70 }, { h: src.hue, s: 45, l: 70 }, 0.5);
-      s.hue = blended.h;
-    } else s.hue = src.hue;
-    s.sat = clamp(src.sat + rand(-6,6), 26, 55);
-    s.r = rand(0.14, 0.24);
-    s.growth = 0;
-    to.spots.push(s);
-    // transfert physique VISIBLE : une gouttelette voyage de "from" vers "to"
-    world.addTransfer(from, to, s.hue, s.sat, s.lit);
+    if (nd >= FUSION_DELAY) world.requestFusion(a, c);
   }
 };
 
@@ -789,8 +674,8 @@ const BlobEvolution = {
   },
   _options(blob) {
     const o = [];
-    if (blob.tentacles.length < MAX_TENTACLES) o.push('tentacle','tentacle','tentacle');
-    if (blob.spots.length < MAX_SPOTS) o.push('spot','spot','spot');
+    if (blob.bumps.length < MAX_BUMPS) o.push('bump','bump','bump','bump');
+    if (blob.spots.length < MAX_SPOTS) o.push('spot','spot');
     if (!blob.traits.includes('eye_left')) o.push('eye');
     else if (!blob.traits.includes('eye_right')) o.push('eye');
     if (!blob.traits.includes('pulse_fast')) o.push('pulse_fast');
@@ -801,8 +686,10 @@ const BlobEvolution = {
     const opts = this._options(blob);
     if (opts.length) {
       switch (pick(opts)) {
-        case 'tentacle': blob.tentacles.push(makeTentacle({ baseAngle: rand(0,TAU) })); break;
-        case 'spot':     blob.spots.push(makeSpot()); break;
+        case 'bump':
+          blob.bumps.push(makeBump(blob.fused ? { dist: rand(0, 0.7) } : { dist: 1.0, angle: rand(0,TAU) }));
+          break;
+        case 'spot': blob.spots.push(makeSpot()); break;
         case 'eye':
           if (!blob.traits.includes('eye_left')) blob.traits.push('eye_left');
           else blob.traits.push('eye_right'); break;
@@ -827,11 +714,10 @@ const BlobEvolution = {
  *  MODULE : World
  * ===================================================================== */
 const World = {
-  blobs: [], w: 0, h: 0, deathFlash: 0, _fusions: [],
-  necks: [], transfers: [],
+  blobs: [], w: 0, h: 0, deathFlash: 0, _fusions: [], necks: [],
   reset(w, h) {
     this.blobs.length = 0; this.w = w; this.h = h; this.deathFlash = 0;
-    this._fusions.length = 0; this.necks.length = 0; this.transfers.length = 0;
+    this._fusions.length = 0; this.necks.length = 0;
     BlobEvolution.mutationClock = 0;
     this.blobs.push(createBlob(w/2, h/2, { radius: INITIAL_RADIUS, opacity: 0, depth: 0.12 }));
   },
@@ -839,17 +725,6 @@ const World = {
   spawn(blob) {
     if (this.blobs.length >= MAX_BLOBS) return false;
     this.blobs.push(blob); return true;
-  },
-  addTransfer(from, to, hue, sat, lit) {
-    if (this.transfers.length > 40) return;
-    this.transfers.push({ fromId: from.id, toId: to.id, hue, sat, lit, t: 0, dur: rand(1.0, 1.8) });
-  },
-  updateTransfers(dt) {
-    for (let i = this.transfers.length-1; i >= 0; i--) {
-      const tr = this.transfers[i];
-      tr.t += dt;
-      if (tr.t >= tr.dur || !this.byId(tr.fromId) || !this.byId(tr.toId)) this.transfers.splice(i, 1);
-    }
   },
   requestFusion(a, b) {
     for (const f of this._fusions)
@@ -861,16 +736,31 @@ const World = {
       if (a.isDying || b.isDying) continue;
       const ib = this.blobs.indexOf(b);
       if (this.blobs.indexOf(a)===-1 || ib===-1) continue;
-      a.radius = clamp((a.radius+b.radius)*0.75, MIN_RADIUS, GROW_MAX+20);
+      // fusion -> blob transparent avec les boules à l'intérieur
+      a.radius = clamp((a.radius+b.radius)*0.78, MIN_RADIUS, GROW_MAX+30);
       a.targetRadius = a.radius;
       a.x = (a.x+b.x)/2; a.y = (a.y+b.y)/2;
+      a.fused = true;
+      a.fuseCooldown = 1.2;
+      a.depth = Math.min(a.depth, b.depth);
       a.evolutionStage = Math.max(a.evolutionStage, b.evolutionStage);
       a.instability = Math.min(0.99, Math.max(a.instability, b.instability));
       for (const t of b.traits) if (!a.traits.includes(t)) a.traits.push(t);
-      for (const tt of b.tentacles) if (a.tentacles.length < MAX_TENTACLES) a.tentacles.push(tt);
       for (const s of b.spots) if (a.spots.length < MAX_SPOTS) a.spots.push(s);
+
+      // les deux coeurs deviennent de grosses boules internes
+      const merged = [];
+      merged.push(makeBump({ dist: rand(0.12, 0.40), r: rand(0.40, 0.55), grow: 1, angle: rand(0,TAU) }));
+      merged.push(makeBump({ dist: rand(0.12, 0.40), r: rand(0.32, 0.48), grow: 1, angle: rand(0,TAU) }));
+      for (const bm of a.bumps.concat(b.bumps)) {
+        if (merged.length >= MAX_BUMPS) break;
+        bm.dist = rand(0.0, 0.68); bm.grow = 1; bm.r = clamp(bm.r*0.8, 0.12, 0.4);
+        merged.push(bm);
+      }
+      a.bumps = merged;
+
       this.blobs.splice(ib, 1);
-      AudioEngine.grow(a);
+      AudioEngine.fuse(a);
     }
     this._fusions.length = 0;
   },
@@ -897,90 +787,35 @@ const World = {
  *  MODULE : Gestures
  * ===================================================================== */
 const Gestures = {
-  onTap(px, py, time) {
-    const hit = this._findTentacle(px, py, time);
-    if (hit) { this._cutTentacle(hit.blob, hit.tent, hit.k, hit.pt); return; }
-    this.divide(World.pick(px, py));
-  },
-
-  _findTentacle(px, py, time) {
-    let best = null, bestD = Infinity;
-    for (const blob of World.blobs) {
-      if (blob.isDying) continue;
-      for (const tent of blob.tentacles) {
-        if (tent.grow < 0.3) continue;
-        const pts = tentaclePoints(blob, tent, time);
-        for (let k = 1; k < pts.length; k++) {
-          if (pts[k].f < 0.35) continue;        // coupe la partie externe
-          const p = pts[k], dd = dist2(px, py, p.x, p.y), thr = p.w + 16;
-          if (dd < thr*thr && dd < bestD) { bestD = dd; best = { blob, tent, k: pts[k].f, pt: p }; }
-        }
-      }
-    }
-    return best;
-  },
-
-  _cutTentacle(blob, tent, frac, pt) {
-    const severedRel = tent.length * (1 - frac);
-    tent.length = Math.max(0.2, tent.length * frac);
-    AudioEngine.cut(blob);
-    if (World.blobs.length < MAX_BLOBS) {
-      const ang = tent.baseAngle;
-      const childR = clamp(blob.radius*severedRel*0.5 + 6, MIN_RADIUS, blob.radius*0.8);
-      const child = createBlob(pt.x, pt.y, {
-        radius: childR,
-        instability: clamp(blob.instability*0.5, 0, 0.7),
-        evolutionStage: Math.max(0, blob.evolutionStage-2),
-        voiceProfile: {
-          baseFreq: clamp(blob.voiceProfile.baseFreq*rand(1.0,1.35), 80, 240),
-          timbre: blob.voiceProfile.timbre, personality: Math.random()
-        },
-        tentacles: severedRel > 0.5 ? [ makeTentacle({ baseAngle: ang+Math.PI, length: rand(0.5,1.0), grow: 0 }) ] : [],
-        spots: (blob.spots.length && Math.random()<0.6) ? [ (()=>{ const s=makeSpot(); s.hue=pick(blob.spots).hue; return s; })() ] : [],
-        opacity: 0
-      });
-      child.velocity.vx = 0; child.velocity.vy = 0;
-      // séparation lente et liquide : reste attaché par un cordon qui s'amincit
-      child._tether = {
-        parentId: blob.id, ang, t: 0, dur: 0.9,
-        releaseVX: Math.cos(ang)*10 + rand(-3,3),
-        releaseVY: Math.sin(ang)*10 + rand(-3,3),
-        childR
-      };
-      World.spawn(child);
-      AudioEngine.birthCry(child);
-    }
-  },
-
   divide(blob) {
     if (!blob || World.blobs.length >= MAX_BLOBS) return;
-    const childRadius = clamp(blob.radius*rand(0.75,1.05), MIN_RADIUS, GROW_MAX);
-    const ang = rand(0, TAU), off = blob.radius + childRadius*0.6;
+    const childRadius = clamp(blob.radius*rand(0.7,1.0), MIN_RADIUS, GROW_MAX);
+    const ang = rand(0, TAU), off = blob.radius + childRadius*0.7;
     const child = createBlob(blob.x+Math.cos(ang)*off, blob.y+Math.sin(ang)*off, {
       radius: childRadius,
       instability: blob.instability*0.3,
       evolutionStage: Math.max(0, blob.evolutionStage-1),
-      traits: blob.traits.filter(() => Math.random() < 0.75),
-      tentacles: blob.tentacles.filter(() => Math.random()<0.5).map(t => makeTentacle({ baseAngle: rand(0,TAU), length: t.length*rand(0.7,1.0) })),
-      spots: blob.spots.filter(() => Math.random()<0.6).map(s => { const ns=makeSpot(); ns.hue=s.hue; ns.sat=s.sat; ns.lit=s.lit; return ns; }),
+      traits: blob.traits.filter(() => Math.random() < 0.7),
+      // l'enfant naît avec quelques boules sur les bords
+      bumps: blob.bumps.filter(() => Math.random()<0.5)
+                       .map(b => makeBump({ angle: rand(0,TAU), r: b.r*rand(0.7,1.0), dist: 1.0 })),
+      spots: blob.spots.filter(() => Math.random()<0.6)
+                       .map(s => { const ns=makeSpot(); ns.hue=s.hue; ns.sat=s.sat; ns.lit=s.lit; return ns; }),
       breathSpeed: blob.breathSpeed*rand(0.85,1.15),
       voiceProfile: {
         baseFreq: clamp(blob.voiceProfile.baseFreq*rand(0.9,1.1), 70, 240),
         timbre: blob.voiceProfile.timbre,
         personality: clamp(blob.voiceProfile.personality+rand(-0.1,0.1), 0, 1)
       },
-      opacity: 0
+      depth: clamp(blob.depth + rand(-0.2,0.2), 0, 1),
+      opacity: 0,
+      fuseCooldown: 1.4
     });
+    blob.fuseCooldown = 1.4;
     blob.velocity.vx -= Math.cos(ang)*5; blob.velocity.vy -= Math.sin(ang)*5;
-    child.velocity.vx = Math.cos(ang)*8; child.velocity.vy = Math.sin(ang)*8;
+    child.velocity.vx = Math.cos(ang)*9; child.velocity.vy = Math.sin(ang)*9;
     World.spawn(child);
     AudioEngine.divide(blob);
-  },
-
-  doubleTapGrow(blob) {
-    if (!blob) return;
-    blob.targetRadius = Math.min(GROW_MAX, blob.radius*1.2);
-    AudioEngine.grow(blob);
   },
   longTapShrink(blob, hold) {
     if (!blob) return;
@@ -990,14 +825,14 @@ const Gestures = {
 };
 
 /* =====================================================================
- *  MODULE : InputHandler — drag pour déplacer
+ *  MODULE : InputHandler — drag pour déplacer, tap pour diviser
  * ===================================================================== */
 const InputHandler = {
   canvas: null, active: false,
-  startX:0, startY:0, lastX:0, lastY:0, startTime:0, moved:false,
+  startX:0, startY:0, startTime:0, moved:false,
   targetBlob:null, draggingBlob:null, longTimer:null, shiverBlob:null,
-  lastTapTime:0, lastTapBlob:null,
-  MOVE_THRESHOLD:9, TAP_MAX_MS:200, DOUBLE_TAP_MS:300, LONG_PRESS_MS:600,
+  grabOX:0, grabOY:0,
+  MOVE_THRESHOLD:9, TAP_MAX_MS:200, LONG_PRESS_MS:600,
 
   init(canvas) {
     this.canvas = canvas;
@@ -1021,13 +856,14 @@ const InputHandler = {
     if (e.touches && e.touches.length > 1) return;
     const p = this._pos(e);
     this.active = true;
-    this.startX = this.lastX = p.x; this.startY = this.lastY = p.y;
+    this.startX = p.x; this.startY = p.y;
     this.startTime = performance.now(); this.moved = false;
     this.targetBlob = World.pick(p.x, p.y);
     this.draggingBlob = null;
     if (this.targetBlob) {
       this.shiverBlob = this.targetBlob;
-      this.longTimer = setTimeout(()=>{}, this.LONG_PRESS_MS);
+      this.grabOX = p.x - this.targetBlob.x;
+      this.grabOY = p.y - this.targetBlob.y;
     }
   },
   _move(e) {
@@ -1035,43 +871,36 @@ const InputHandler = {
     e.preventDefault();
     const p = this._pos(e);
     if (!this.moved && Math.hypot(p.x-this.startX, p.y-this.startY) > this.MOVE_THRESHOLD) {
-      this.moved = true; clearTimeout(this.longTimer); this.shiverBlob = null;
-      // commence à déplacer le blob ciblé
-      if (this.targetBlob && !this.targetBlob.isDying && !this.targetBlob._tether) {
+      this.moved = true; this.shiverBlob = null;
+      if (this.targetBlob && !this.targetBlob.isDying) {
         this.draggingBlob = this.targetBlob;
         this.draggingBlob.isDragged = true;
+        this.draggingBlob.grabX = this.grabOX;
+        this.draggingBlob.grabY = this.grabOY;
         this.draggingBlob.dragX = p.x; this.draggingBlob.dragY = p.y;
         AudioEngine.pickup(this.draggingBlob);
       }
     }
     if (this.draggingBlob) { this.draggingBlob.dragX = p.x; this.draggingBlob.dragY = p.y; }
-    this.lastX = p.x; this.lastY = p.y;
   },
   _up(e) {
     if (!this.active) return;
     e.preventDefault();
-    this.active = false; clearTimeout(this.longTimer);
-    const now = performance.now(), dt = now - this.startTime;
+    this.active = false;
+    const dt = performance.now() - this.startTime;
     const blob = this.targetBlob;
     if (this.shiverBlob) this.shiverBlob.shiverHold = 0;
 
     if (this.draggingBlob) {
-      this.draggingBlob.isDragged = false;   // relâche avec l'élan accumulé
+      this.draggingBlob.isDragged = false;
+      this.draggingBlob._grab = null;
       this.draggingBlob = null;
     } else if (this.moved) {
       // glissement sans cible : rien
     } else if (dt >= this.LONG_PRESS_MS) {
       Gestures.longTapShrink(blob, dt/1000);
-    } else {
-      const isDouble = (now-this.lastTapTime) < this.DOUBLE_TAP_MS
-                       && this.lastTapBlob && blob && this.lastTapBlob === blob;
-      if (isDouble) {
-        Gestures.doubleTapGrow(blob);
-        this.lastTapTime = 0; this.lastTapBlob = null;
-      } else {
-        Gestures.onTap(this.startX, this.startY, GameLoop.time);
-        this.lastTapTime = now; this.lastTapBlob = blob;
-      }
+    } else if (dt < this.TAP_MAX_MS + 200) {
+      Gestures.divide(blob || World.pick(this.startX, this.startY)); // tap -> division
     }
     this.targetBlob = null; this.shiverBlob = null;
   },
@@ -1084,37 +913,45 @@ const InputHandler = {
 };
 
 /* =====================================================================
- *  MODULE : ScreenManager
+ *  MODULE : ScreenManager — écran de départ (pulsation, sans texte)
  * ===================================================================== */
 const ScreenManager = {
-  startScreen:null, startCanvas:null, startCtx:null, startText:null,
-  gameCanvas:null, handHint:null, inGame:false, startBreath:0, rafStart:0, hintShown:false,
+  startScreen:null, startCanvas:null, startCtx:null,
+  gameCanvas:null, inGame:false, startBreath:0, rafStart:0, size:280,
   init() {
     this.startScreen = document.getElementById('startScreen');
     this.startCanvas = document.getElementById('startCanvas');
-    this.startText = document.getElementById('startText');
     this.gameCanvas = document.getElementById('gameCanvas');
-    this.handHint = document.getElementById('handHint');
     const dpr = Math.min(window.devicePixelRatio||1, 2);
-    this.startCanvas.width = 200*dpr; this.startCanvas.height = 200*dpr;
-    this.startCanvas.style.width='200px'; this.startCanvas.style.height='200px';
+    this.startCanvas.width = this.size*dpr; this.startCanvas.height = this.size*dpr;
+    this.startCanvas.style.width=this.size+'px'; this.startCanvas.style.height=this.size+'px';
     this.startCtx = this.startCanvas.getContext('2d');
     this.startCtx.scale(dpr, dpr);
-    setTimeout(()=>this.startText.classList.add('visible'), 1500);
-    const loop = ()=>{ if(this.inGame) return; this._drawStartBlob(); this.rafStart = requestAnimationFrame(loop); };
+    const loop = ()=>{ if(this.inGame) return; this._drawStart(); this.rafStart = requestAnimationFrame(loop); };
     loop();
     const start = e => { e.preventDefault(); this.enterGame(); };
     this.startScreen.addEventListener('touchstart', start, { passive:false });
     this.startScreen.addEventListener('mousedown', start, { passive:false });
   },
-  _drawStartBlob() {
-    const ctx = this.startCtx;
-    ctx.clearRect(0,0,200,200);
-    this.startBreath += 0.022;
-    const t = this.startBreath, cx=100, cy=100, baseR=30;
-    const r = baseR*(1+Math.sin(t)*0.1);
+  _drawStart() {
+    const ctx = this.startCtx, S = this.size;
+    ctx.clearRect(0,0,S,S);
+    this.startBreath += 0.018;
+    const t = this.startBreath, cx=S/2, cy=S/2, baseR=30;
     ctx.save(); ctx.translate(cx, cy);
-    ctx.shadowBlur = 24; ctx.shadowColor = 'rgba(255,225,215,0.95)';
+
+    // anneaux de pulsation -> invitent à toucher
+    for (let i = 0; i < 3; i++) {
+      const pp = ((t*0.35 + i/3) % 1);
+      const rr = baseR*(1.1 + pp*2.4);
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU);
+      ctx.strokeStyle = `rgba(255,222,212,${0.35*(1-pp)})`;
+      ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // la forme qui respire
+    const r = baseR*(1+Math.sin(t)*0.1);
+    ctx.shadowBlur = 26; ctx.shadowColor = 'rgba(255,222,212,0.95)';
     const n = 7, pts = [];
     for (let i = 0; i < n; i++) {
       const a = (i/n)*TAU, osc = Math.sin(t*1.0 + i*1.7)*0.06, rr = r*(1+osc);
@@ -1127,9 +964,10 @@ const ScreenManager = {
       ctx.quadraticCurveTo(cur.x, cur.y, (cur.x+nxt.x)/2, (cur.y+nxt.y)/2);
     }
     ctx.closePath();
-    const g = ctx.createRadialGradient(-6,-6,3,0,0,r*1.2);
-    g.addColorStop(0,'#fffaf6'); g.addColorStop(0.6,'#f7e6df'); g.addColorStop(1,'#e0b8b0');
-    ctx.fillStyle = g; ctx.fill(); ctx.restore();
+    const g = ctx.createRadialGradient(-8,-9,3,0,0,r*1.2);
+    g.addColorStop(0,'#fffaf6'); g.addColorStop(0.55,'#f6dcd4'); g.addColorStop(1,'#e0a89f');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.restore();
   },
   enterGame() {
     if (this.inGame) return;
@@ -1139,11 +977,6 @@ const ScreenManager = {
     setTimeout(()=>{ this.startScreen.style.display='none'; }, 850);
     GameLoop.start(this.gameCanvas);
     requestAnimationFrame(()=>this.gameCanvas.classList.add('visible'));
-    if (!this.hintShown) {
-      this.hintShown = true;
-      setTimeout(()=>this.handHint.classList.add('visible'), 1400);
-      setTimeout(()=>this.handHint.classList.remove('visible'), 8400);
-    }
   }
 };
 
@@ -1169,7 +1002,6 @@ const Backdrop = {
   },
   draw(ctx, time, w, h) {
     if (!this.inited) this.init(w, h);
-    // base sombre, légèrement teintée et lentement mouvante
     const t = time*0.05;
     const g = ctx.createLinearGradient(0, 0, w*0.4, h);
     g.addColorStop(0,   `hsl(${150+Math.sin(t)*20|0},32%,5%)`);
@@ -1244,26 +1076,18 @@ const GameLoop = {
     for (const blob of World.blobs) BlobPhysics.update(blob, dt, World);
     BlobPhysics.resolveContacts(World, dt);
     BlobEvolution.update(dt, World);
-    World.updateTransfers(dt);
     World.processFusions();
     World.removeDead();
     if (World.deathFlash > 0) World.deathFlash = Math.max(0, World.deathFlash - dt*2.2);
   },
   _render() {
     const ctx = this.ctx;
-    // fond nébuleux onirique (remplace le noir + trail)
     Backdrop.draw(ctx, this.time, this.cssW, this.cssH);
-
-    // cordons de matière entre blobs en contact (transfert physique)
+    // cordon de matière entre blobs sur le point de fusionner
     this._drawNecks(ctx);
-    // cordons de séparation liquide des morceaux coupés
-    this._drawTethers(ctx);
     // les blobs, du fond (flou) vers le premier plan (net)
     const ordered = World.blobs.slice().sort((a, b) => b.depth - a.depth);
     for (const blob of ordered) BlobRenderer.draw(ctx, blob, this.time);
-    // gouttelettes colorées (contamination visible)
-    this._drawTransfers(ctx);
-
     if (World.deathFlash > 0.01) BlobRenderer.drawDeathFlash(ctx, this.cssW, this.cssH, World.deathFlash*0.7);
   },
   _drawNecks(ctx) {
@@ -1277,39 +1101,6 @@ const GameLoop = {
       drawStrand(ctx, a.x, a.y, c.x, c.y, w, w, `rgba(255,234,224,0.88)`, 14, 0.85);
       ctx.globalAlpha = 1;
     }
-  },
-  _drawTethers(ctx) {
-    for (const blob of World.blobs) {
-      const te = blob._tether; if (!te) continue;
-      const parent = World.byId(te.parentId);
-      const k = clamp(te.t/te.dur, 0, 1);
-      let ax, ay;
-      if (parent) { ax = parent.x + Math.cos(te.ang)*parent.radius*1.0; ay = parent.y + Math.sin(te.ang)*parent.radius*1.0; }
-      else { ax = blob.x - Math.cos(te.ang)*blob.radius*2; ay = blob.y - Math.sin(te.ang)*blob.radius*2; }
-      const w = lerp(te.childR*0.6, 0.5, k); // s'amincit -> rupture liquide
-      ctx.globalAlpha = (1 - k) * blob.opacity;
-      drawStrand(ctx, ax, ay, blob.x, blob.y, w*0.7, w, 'rgba(255,236,226,0.92)', 14, 0.7);
-      ctx.globalAlpha = 1;
-    }
-  },
-  _drawTransfers(ctx) {
-    ctx.save();
-    for (const tr of World.transfers) {
-      const from = World.byId(tr.fromId), to = World.byId(tr.toId);
-      if (!from || !to) continue;
-      const k = tr.t/tr.dur;
-      const ease = k*k*(3-2*k);
-      const x = lerp(from.x, to.x, ease), y = lerp(from.y, to.y, ease);
-      const r = 5 * Math.sin(k*Math.PI) + 1.5;    // grossit puis se fond
-      const h = tr.hue|0, s = (tr.sat+20)|0, l = (tr.lit-6)|0;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, `hsla(${h},${s}%,${l}%,0.85)`);
-      g.addColorStop(1, `hsla(${h},${s}%,${l}%,0)`);
-      ctx.shadowBlur = 8; ctx.shadowColor = `hsla(${h},${s}%,${l}%,0.6)`;
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
-    }
-    ctx.restore();
   }
 };
 
