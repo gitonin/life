@@ -42,8 +42,8 @@
   #gameCanvas {
     position: absolute; inset: 0; display: block; background: #07060a;
     z-index: 10; opacity: 0; transition: opacity 600ms ease;
-    /* flou d'objectif onirique */
-    filter: blur(2.2px) saturate(1.2) contrast(1.02);
+    /* flou d'objectif onirique (la profondeur de champ ajoute du flou par blob) */
+    filter: blur(1.4px) saturate(1.2) contrast(1.02);
   }
   #gameCanvas.visible { opacity: 1; }
 
@@ -417,7 +417,8 @@ function createBlob(x, y, opts) {
     contacts: new Map(),
     _lookAt: null,
     isDragged: false, dragX: x, dragY: y,
-    _tether: null
+    _tether: null,
+    depth: opts.depth != null ? opts.depth : rand(0, 1)  // 0 = devant net, 1 = fond flou
   };
 }
 
@@ -481,7 +482,10 @@ const BlobRenderer = {
     const dark = Math.max(dyingDark*0.5, decayDark);
 
     ctx.save();
-    ctx.globalAlpha = blob.opacity;
+    // profondeur de champ : les blobs du fond sont plus flous et plus diffus
+    const depth = blob.depth || 0;
+    if (depth > 0.05) ctx.filter = `blur(${(depth*3.2).toFixed(2)}px)`;
+    ctx.globalAlpha = blob.opacity * (1 - depth*0.24);
 
     // tentacules (sous le corps) -> émergent comme des excroissances
     this._drawTentacles(ctx, blob, time, dark);
@@ -492,12 +496,12 @@ const BlobRenderer = {
     ctx.shadowBlur = 26;
     ctx.shadowColor = `rgba(255,200,188,${0.55 - dark*0.6})`;
     this._traceBody(ctx, blob, r, time);
-    // crème chaud lumineux au coeur -> peau pêche -> bord rosé
+    // crème-rosé lumineux au coeur -> pêche -> rose profond au bord
     const grad = ctx.createRadialGradient(-r*0.28, -r*0.30, r*0.08, 0, 0, r*1.18);
-    grad.addColorStop(0,    `hsl(36,${clamp(34-dark*14,0,40)}%,${clamp(98-dark*42,30,100)}%)`);
-    grad.addColorStop(0.55, `hsl(24,${clamp(40-dark*10,10,55)}%,${clamp(90-dark*44,22,94)}%)`);
-    grad.addColorStop(0.85, `hsl(${dark>0.15?300:355},${clamp(42+dark*8,20,60)}%,${clamp(80-dark*40,18,86)}%)`);
-    grad.addColorStop(1,    `hsl(${dark>0.15?295:350},${clamp(45+dark*10,20,65)}%,${clamp(72-dark*40,14,80)}%)`);
+    grad.addColorStop(0,    `hsl(30,${clamp(48-dark*16,0,55)}%,${clamp(96-dark*40,30,100)}%)`);
+    grad.addColorStop(0.5,  `hsl(18,${clamp(58-dark*12,16,70)}%,${clamp(85-dark*42,22,90)}%)`);
+    grad.addColorStop(0.85, `hsl(${dark>0.15?298:2},${clamp(56+dark*6,24,70)}%,${clamp(77-dark*38,18,84)}%)`);
+    grad.addColorStop(1,    `hsl(${dark>0.15?292:348},${clamp(58+dark*8,24,72)}%,${clamp(69-dark*38,14,78)}%)`);
     ctx.fillStyle = grad;
     ctx.fill();
 
@@ -829,7 +833,7 @@ const World = {
     this.blobs.length = 0; this.w = w; this.h = h; this.deathFlash = 0;
     this._fusions.length = 0; this.necks.length = 0; this.transfers.length = 0;
     BlobEvolution.mutationClock = 0;
-    this.blobs.push(createBlob(w/2, h/2, { radius: INITIAL_RADIUS, opacity: 0 }));
+    this.blobs.push(createBlob(w/2, h/2, { radius: INITIAL_RADIUS, opacity: 0, depth: 0.12 }));
   },
   byId(id) { for (const b of this.blobs) if (b.id === id) return b; return null; },
   spawn(blob) {
@@ -1254,8 +1258,9 @@ const GameLoop = {
     this._drawNecks(ctx);
     // cordons de séparation liquide des morceaux coupés
     this._drawTethers(ctx);
-    // les blobs
-    for (const blob of World.blobs) BlobRenderer.draw(ctx, blob, this.time);
+    // les blobs, du fond (flou) vers le premier plan (net)
+    const ordered = World.blobs.slice().sort((a, b) => b.depth - a.depth);
+    for (const blob of ordered) BlobRenderer.draw(ctx, blob, this.time);
     // gouttelettes colorées (contamination visible)
     this._drawTransfers(ctx);
 
