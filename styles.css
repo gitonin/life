@@ -1,0 +1,354 @@
+/* MERIDIAN — sober, Helvetica-driven specialty coffee site */
+
+:root {
+  --bg: #ffffff;
+  --ink: #111111;
+  --muted: #777777;
+  --line: #e6e6e6;
+  --max: 1200px;
+  --pad: 32px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ---------- Header / nav ---------- */
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px var(--pad);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.wordmark {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.nav {
+  display: flex;
+  gap: 28px;
+}
+
+.nav a {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.nav a:hover {
+  color: var(--muted);
+}
+
+.nav-cart {
+  color: var(--muted) !important;
+}
+
+/* ---------- Layout primitives ---------- */
+
+main {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+
+section {
+  padding: 88px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(34px, 6vw, 64px);
+  line-height: 1.05;
+}
+
+h2 {
+  font-size: clamp(22px, 3vw, 30px);
+}
+
+p {
+  margin: 0;
+}
+
+.link-arrow {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 2px;
+}
+
+.link-arrow:hover {
+  color: var(--muted);
+  border-color: var(--muted);
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  padding: 120px 0;
+}
+
+.hero-text {
+  max-width: 720px;
+}
+
+.hero-text p {
+  margin: 24px 0 36px;
+  font-size: 18px;
+  color: var(--muted);
+  max-width: 480px;
+}
+
+/* ---------- Intro ---------- */
+
+.intro p {
+  max-width: 760px;
+  font-size: clamp(20px, 2.6vw, 26px);
+  line-height: 1.4;
+}
+
+/* ---------- Sections with heading row ---------- */
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 40px;
+}
+
+/* ---------- Product grid ---------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 40px;
+}
+
+.product {
+  display: block;
+}
+
+.product-image {
+  aspect-ratio: 4 / 5;
+  background: #f2f0ec;
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.product-image::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.product:hover .product-image {
+  background: #ebe8e2;
+}
+
+.product-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 15px;
+}
+
+.product-name {
+  font-weight: 700;
+}
+
+.product-price {
+  color: var(--muted);
+}
+
+.product-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- Philosophy ---------- */
+
+.philosophy {
+  max-width: 720px;
+}
+
+.philosophy p {
+  margin-top: 16px;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+/* ---------- Generic page content ---------- */
+
+.page {
+  padding: 88px 0;
+}
+
+.page-title {
+  font-size: clamp(30px, 5vw, 48px);
+  margin-bottom: 40px;
+}
+
+.prose {
+  max-width: 620px;
+}
+
+.prose p {
+  margin-bottom: 20px;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.prose p:first-of-type {
+  font-size: 20px;
+  color: var(--ink);
+}
+
+/* ---------- Contact ---------- */
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  max-width: 760px;
+}
+
+.contact-block h3 {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.contact-block p,
+.contact-block a {
+  font-size: 17px;
+  display: block;
+}
+
+.contact-block a {
+  border-bottom: 1px solid var(--line);
+  width: fit-content;
+}
+
+.contact-block a:hover {
+  border-color: var(--ink);
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 64px var(--pad);
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 32px;
+}
+
+.site-footer a,
+.site-footer p,
+.site-footer span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.footer-col a:hover {
+  color: var(--ink);
+}
+
+.wordmark-small {
+  font-weight: 700 !important;
+  letter-spacing: 0.12em;
+  color: var(--ink) !important;
+}
+
+.footer-fine {
+  justify-content: flex-end;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  .contact-grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .site-footer {
+    grid-template-columns: 1fr 1fr;
+  }
+  .site-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  section,
+  .hero {
+    padding: 56px 0;
+  }
+}
+
+@media (max-width: 460px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
